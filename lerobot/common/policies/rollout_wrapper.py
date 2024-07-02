@@ -82,6 +82,10 @@ class PolicyRolloutWrapper:
             # executed.
             self._action_cache: dict[int, Tensor] = {}
 
+    def invalidate_action_cache(self):
+        with self._thread_lock:
+            self._action_cache: dict[int, Tensor] = {}
+
     def _invalidate_obsolete_observations(self):
         """TODO(now)"""
 
@@ -208,7 +212,7 @@ class PolicyRolloutWrapper:
                 cache with the timestamps needed to construct the inference inputs (ie there are no
                 observations within `self.timestamp_tolerance_ms`).
         Returns:
-            A (sequence, batch, action_dime) tensor for a sequence of actions starting from the requested
+            A (sequence, batch, action_dim) tensor for a sequence of actions starting from the requested
             `first_action_timestamp` and spaced by `1/fps` or None if the `timeout` is reached and there is no
             first action available.
         """
