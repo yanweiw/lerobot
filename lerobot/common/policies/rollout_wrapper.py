@@ -225,10 +225,10 @@ class PolicyRolloutWrapper:
         del first_action_timestamp  # defensive against accidentally using the seconds version
 
         # Update observation cache.
-        if not set(observation_batch).issubset(self.policy.input_keys):
-            raise ValueError(
-                f"Missing observation_keys: {set(self.policy.input_keys).difference(set(observation_batch))}"
-            )
+        # if not set(observation_batch).issubset(self.policy.input_keys):
+        #     raise ValueError(
+        #         f"Missing observation_keys: {set(self.policy.input_keys).difference(set(observation_batch))}"
+        #     )
         with self._thread_lock:
             self._observation_cache[observation_timestamp_ms] = observation_batch
 

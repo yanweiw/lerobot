@@ -86,52 +86,28 @@ class ACTPolicy(nn.Module, PyTorchModelHubMixin):
         else:
             self._action_queue = deque([], maxlen=self.config.n_action_steps)
 
+    @property
+    def n_obs_steps(self) -> int:
+        return self.config.n_obs_steps
+
+    @property
+    def input_keys(self) -> set[str]:
+        return set(self.config.input_shapes)
+
     @torch.no_grad
-    def select_action(self, batch: dict[str, Tensor]) -> Tensor:
-        """Select a single action given environment observations.
-
-        This method wraps `select_actions` in order to return one action at a time for execution in the
-        environment. It works by managing the actions in a queue and only calling `select_actions` when the
-        queue is empty.
-        """
-        self.eval()
-
-        batch = self.normalize_inputs(batch)
+    def run_inference(self, observation_batch: dict[str, Tensor]) -> Tensor:
+        observation_batch = self.normalize_inputs(observation_batch)
         if len(self.expected_image_keys) > 0:
-            batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
-
-        # If we are doing temporal ensembling, keep track of the exponential moving average (EMA), and return
-        # the first action.
-        if self.config.temporal_ensemble_momentum is not None:
-            actions = self.model(batch)[0]  # (batch_size, chunk_size, action_dim)
-            actions = self.unnormalize_outputs({"action": actions})["action"]
-            if self._ensembled_actions is None:
-                # Initializes `self._ensembled_action` to the sequence of actions predicted during the first
-                # time step of the episode.
-                self._ensembled_actions = actions.clone()
-            else:
-                # self._ensembled_actions will have shape (batch_size, chunk_size - 1, action_dim). Compute
-                # the EMA update for those entries.
-                alpha = self.config.temporal_ensemble_momentum
-                self._ensembled_actions = alpha * self._ensembled_actions + (1 - alpha) * actions[:, :-1]
-                # The last action, which has no prior moving average, needs to get concatenated onto the end.
-                self._ensembled_actions = torch.cat([self._ensembled_actions, actions[:, -1:]], dim=1)
-            # "Consume" the first action.
-            action, self._ensembled_actions = self._ensembled_actions[:, 0], self._ensembled_actions[:, 1:]
-            return action
-
-        # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
-        # querying the policy.
-        if len(self._action_queue) == 0:
-            actions = self.model(batch)[0][:, : self.config.n_action_steps]
-
-            # TODO(rcadene): make _forward return output dictionary?
-            actions = self.unnormalize_outputs({"action": actions})["action"]
-
-            # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._action_queue.extend(actions.transpose(0, 1))
-        return self._action_queue.popleft()
+            observation_batch["observation.images"] = torch.stack(
+                [observation_batch[k] for k in self.expected_image_keys], dim=-4
+            )
+        for k in observation_batch:
+            if not k.startswith("observation"):
+                continue
+            observation_batch[k] = observation_batch[k].squeeze(1)
+        actions, _ = self.model(observation_batch)
+        actions = self.unnormalize_outputs({"action": actions})["action"]
+        return actions
 
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         """Run the batch through the model and compute the loss for training or validation."""
@@ -361,6 +337,13 @@ class ACT(nn.Module):
 
             # Sample the latent with the reparameterization trick.
             latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu)
+        elif self.config.use_vae:
+            # When not using the VAE encoder, we sample the latent from the standard normal distribution.
+            mu = log_sigma_x2 = None
+            # TODO(rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
+            latent_sample = torch.randn([batch_size, self.config.latent_dim], dtype=torch.float32).to(
+                batch["observation.state"].device
+            )
         else:
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
