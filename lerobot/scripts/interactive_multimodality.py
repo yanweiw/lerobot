@@ -1,5 +1,6 @@
 import cv2
 import einops
+import gym_pusht  # noqa: F401
 import gymnasium as gym
 import numpy as np
 import torch
