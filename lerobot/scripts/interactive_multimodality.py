@@ -1,3 +1,18 @@
+"""
+Run from the root directory of the project with `python lerobot/scripts/interactive_multimodality.py`.
+
+This script:
+    - Sets up a PushT environment (custom branch: https://github.com/alexander-soare/gym-pusht/tree/add_all_mode)
+    - Loads up 3 policies from pretrained models on the hub: Diffusion Policy, ACT, and VQ-BeT.
+        - You can switch between ACT with and without VAE (see comments below).
+    - Runs the environment in a loop showing visualizations for each of the policies. You can mouse over the
+      first window to control the robot.
+        - You can comment in/out policies to show.
+        - You can noise the observations prior to input to the policies.
+
+NOTE about setup. You can follow the setup instructions in the main LeRobot README.
+"""
+
 import cv2
 import einops
 import gym_pusht  # noqa: F401
@@ -13,7 +28,7 @@ from lerobot.common.utils.utils import seeded_context
 
 SPACE_SIZE = 512
 
-batch_size = 50
+batch_size = 50  # visualize this many trajectories per inference
 vis_size = 512
 
 env = gym.make(
@@ -34,7 +49,8 @@ dp.cuda()
 dp.eval()
 dp_wrapped = PolicyRolloutWrapper(dp, fps=fps)
 
-act = ACTPolicy.from_pretrained("outputs/act_pusht_keypoints_4dec_novae")
+act = ACTPolicy.from_pretrained("alexandersoare/act_pusht_keypoints")
+# act = ACTPolicy.from_pretrained("alexandersoare/act_nvae_pusht_keypoints")  # no VAE version
 act.cuda()
 act.eval()
 act_wrapped = PolicyRolloutWrapper(act, fps=fps)
@@ -75,15 +91,10 @@ def run_inference(policy_wrapped, obs, timestamp, noise_std=0):
 
 
 # Uncomment/comment pairs of policies and window names.
-policies_wrapped = [
-    # dp_wrapped,
-    # act_wrapped,
-    vqbet_wrapped,
-]
-window_names = [
-    # "Diffusion Policy",
-    # "Action Chunking Transformer",
-    "VQ-BeT",
+ls_window_names_and_policies = [
+    ("Diffusion_Policy", dp_wrapped),
+    ("Action Chunking Transformer", act_wrapped),
+    # ("VQ-BeT", vqbet_wrapped),
 ]
 
 
@@ -93,10 +104,10 @@ def mouse_callback(event: int, x: int, y: int, flags: int = 0, *_):
 
 
 img = env.render()
-for window_name in window_names:
+for window_name, _ in ls_window_names_and_policies:
     cv2.imshow(window_name, cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     cv2.imshow(window_name, cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-cv2.setMouseCallback(window_names[0], mouse_callback)
+cv2.setMouseCallback(ls_window_names_and_policies[0][0], mouse_callback)
 
 quit_ = False
 t = 0
@@ -109,7 +120,7 @@ while not quit_:
 
     img = env.render()
 
-    for window_name, policy_wrapped in zip(window_names, policies_wrapped, strict=True):
+    for window_name, policy_wrapped in ls_window_names_and_policies:
         img_ = img.copy()
         # Uncomment this one (and comment out the next one) if you want to just clear the action cache but
         # not the observation cache.
@@ -117,6 +128,8 @@ while not quit_:
         # Uncomment this one (and comment out the last one) if you want to clear both the observation cache
         # and the action cache.
         # policy_wrapped.reset()
+        # Set noise_std to a non-zero value to noise the observations prior to input to the policies. 4 is
+        # a good value.
         policy_batch_actions = run_inference(policy_wrapped, obs, t, noise_std=0)
 
         obs, *_ = env.step(action)
