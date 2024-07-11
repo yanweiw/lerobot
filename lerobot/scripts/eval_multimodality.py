@@ -176,7 +176,7 @@ def rollout(
             observation_ = {
                 k: einops.repeat(v, "b ... -> (n b) ...", n=n_repeats).clone() for k, v in observation.items()
             }
-            observation_["observation.state"] += torch.randn_like(observation_["observation.state"]) * 1
+            # observation_["observation.state"] += torch.randn_like(observation_["observation.state"]) * 1
             action_sequence = policy_rollout_wrapper.provide_observation_get_actions(
                 observation_,
                 observation_timestamp=step / fps,
