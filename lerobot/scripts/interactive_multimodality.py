@@ -41,13 +41,22 @@ fps = env.unwrapped.metadata["render_fps"]
 obs, _ = env.reset()
 action = obs["agent_pos"]
 
-dp = DiffusionPolicy.from_pretrained("lerobot/diffusion_pusht_keypoints")
-dp.config.noise_scheduler_type = "DDIM"
-dp.config.num_inference_steps = 10
-dp.config.n_action_steps = dp.config.horizon - dp.config.n_obs_steps + 1
-dp.cuda()
-dp.eval()
-dp_wrapped = PolicyRolloutWrapper(dp, fps=fps)
+dp_img = DiffusionPolicy.from_pretrained("lerobot/diffusion_pusht")
+dp_img.config.noise_scheduler_type = "DDIM"
+dp_img.diffusion.num_inference_steps = 10
+dp_img.config.n_action_steps = dp_img.config.horizon - dp_img.config.n_obs_steps + 1
+dp_img.cuda()
+dp_img.eval()
+dp_img_wrapped = PolicyRolloutWrapper(dp_img, fps=fps)
+
+dp_kp = DiffusionPolicy.from_pretrained("lerobot/diffusion_pusht_keypoints")
+dp_kp.config.noise_scheduler_type = "DDIM"
+dp_kp.diffusion.num_inference_steps = 10
+dp_kp.config.n_action_steps = dp_kp.config.horizon - dp_kp.config.n_obs_steps + 1
+dp_kp.cuda()
+dp_kp.eval()
+dp_kp_wrapped = PolicyRolloutWrapper(dp_kp, fps=fps)
+
 
 act = ACTPolicy.from_pretrained("alexandersoare/act_pusht_keypoints")
 # act = ACTPolicy.from_pretrained("alexandersoare/act_nvae_pusht_keypoints")  # no VAE version
@@ -92,7 +101,8 @@ def run_inference(policy_wrapped, obs, timestamp, noise_std=0):
 
 # Uncomment/comment pairs of policies and window names.
 ls_window_names_and_policies = [
-    ("Diffusion_Policy", dp_wrapped),
+    # ("Diffusion Policy (image)", dp_img_wrapped),
+    ("Diffusion Policy (keypoints)", dp_kp_wrapped),
     ("Action Chunking Transformer", act_wrapped),
     # ("VQ-BeT", vqbet_wrapped),
 ]
@@ -124,10 +134,10 @@ while not quit_:
         img_ = img.copy()
         # Uncomment this one (and comment out the next one) if you want to just clear the action cache but
         # not the observation cache.
-        policy_wrapped.invalidate_action_cache()
+        # policy_wrapped.invalidate_action_cache()
         # Uncomment this one (and comment out the last one) if you want to clear both the observation cache
         # and the action cache.
-        # policy_wrapped.reset()
+        policy_wrapped.reset()
         # Set noise_std to a non-zero value to noise the observations prior to input to the policies. 4 is
         # a good value.
         policy_batch_actions = run_inference(policy_wrapped, obs, t, noise_std=0)
