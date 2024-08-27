@@ -26,10 +26,10 @@ from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 # pprint(lerobot.available_datasets)
 
 # Let's take one for this example
-repo_id = "lerobot/pusht"
+repo_id = "maze2d"
 
 # You can easily load a dataset from a Hugging Face repository
-dataset = LeRobotDataset(repo_id)
+dataset = LeRobotDataset(repo_id, 'maze2d-large-sparse-v1.hdf5', split=None)
 
 # LeRobotDataset is actually a thin wrapper around an underlying Hugging Face dataset
 # (see https://huggingface.co/docs/datasets/index for more information).
@@ -65,14 +65,14 @@ to_idx = dataset.episode_data_index["to"][episode_index].item()
 # differences with the current loaded frame. For instance:
 delta_timestamps = {
     # loads 4 images: 1 second before current frame, 500 ms before, 200 ms before, and current frame
-    "observation.image": [-1, -0.5, -0.20, 0],
+    "observation.environment_state": [-1, -0.5, -0.20, 0],
     # loads 8 state vectors: 1.5 seconds before, 1 second before, ... 20 ms, 10 ms, and current frame
     "observation.state": [-1.5, -1, -0.5, -0.20, -0.10, -0.02, -0.01, 0],
     # loads 64 action vectors: current frame, 1 frame in the future, 2 frames, ... 63 frames in the future
     "action": [t / dataset.fps for t in range(64)],
 }
-dataset = LeRobotDataset(repo_id, delta_timestamps=delta_timestamps)
-print(f"\n{dataset[0]['observation.image'].shape=}")  # (4,c,h,w)
+dataset = LeRobotDataset(repo_id, 'maze2d-large-sparse-v1.hdf5', split=None, delta_timestamps=delta_timestamps)
+print(f"\n{dataset[0]['observation.environment_state'].shape=}")  # (4,c,h,w)
 print(f"{dataset[0]['observation.state'].shape=}")  # (8,c)
 print(f"{dataset[0]['action'].shape=}\n")  # (64,c)
 
@@ -85,7 +85,7 @@ dataloader = torch.utils.data.DataLoader(
     shuffle=True,
 )
 for batch in dataloader:
-    print(f"{batch['observation.image'].shape=}")  # (32,4,c,h,w)
+    print(f"{batch['observation.environment_state'].shape=}")  # (32,4,c,h,w)
     print(f"{batch['observation.state'].shape=}")  # (32,8,c)
     print(f"{batch['action'].shape=}")  # (32,64,c)
     break

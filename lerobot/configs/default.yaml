@@ -7,7 +7,7 @@ hydra:
   run:
     # Set `dir` to where you would like to save all of the run outputs. If you run another training session
     # with the same value for `dir` its contents will be overwritten unless you set `resume` to true.
-    dir: outputs/train/${now:%Y-%m-%d}/${now:%H-%M-%S}_${env.name}_${policy.name}_${hydra.job.name}
+    dir: /mnt/data/lerobot/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${env.name}_${policy.name}_${hydra.job.name}
   job:
     name: default
 
@@ -28,6 +28,7 @@ seed: ???
 # "dataset_index" into the returned item. The index mapping is made according to the order in which the
 # datsets are provided.
 dataset_repo_id: lerobot/pusht
+dataset_root: None
 video_backend: pyav
 
 training:
