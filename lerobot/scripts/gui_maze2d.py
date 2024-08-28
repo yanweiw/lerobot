@@ -8,13 +8,14 @@ import einops
 from pathlib import Path
 from huggingface_hub import snapshot_download
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
+from lerobot.common.policies.act.modeling_act import ACTPolicy
 from lerobot.common.policies.rollout_wrapper import PolicyRolloutWrapper
 from lerobot.common.utils.utils import seeded_context, init_hydra_config
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.datasets.factory import make_dataset
 
 fps = 10
-batch_size = 3  # visualize this many trajectories per inference
+batch_size = 32  # visualize this many trajectories per inference
 renderer_background = np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                                 [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
                                 [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
@@ -65,17 +66,25 @@ def generate_time_color_map(num_steps):
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', "--checkpoint", type=str, help="Path to the checkpoint")
+    parser.add_argument('-p', '--policy', type=str, help="Policy name")
+    args = parser.parse_args()
+    
     # Load policy from new codebase
     device = torch.device("cuda")
 
-    pretrained_policy_path = Path("/mnt/data/lerobot/outputs/2024-08-27/12-10-04_maze2d_diffusion_default/checkpoints/130000/pretrained_model")  # Update path as necessary
+    pretrained_policy_path = Path(os.path.join(args.checkpoint, "pretrained_model"))  # Update path as necessary
     # hydra_cfg = init_hydra_config(str(pretrained_policy_path / "config.yaml"))
     # policy = make_policy(hydra_cfg=hydra_cfg, dataset_stats=make_dataset(hydra_cfg).stats)
     # dataset = make_dataset(hydra_cfg)
-    policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
-    policy.config.noise_scheduler_type = "DDIM"
-    policy.diffusion.num_inference_steps = 10
-    policy.config.n_action_steps = policy.config.horizon - policy.config.n_obs_steps + 1
+    if args.policy in ["diffusion", "dp"]:
+        policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
+        policy.config.noise_scheduler_type = "DDIM"
+        policy.diffusion.num_inference_steps = 10
+        policy.config.n_action_steps = policy.config.horizon - policy.config.n_obs_steps + 1
+    if args.policy in ["act"]:
+        policy = ACTPolicy.from_pretrained(pretrained_policy_path)
     policy.cuda()
     policy.eval()
     policy_wrapped = PolicyRolloutWrapper(policy, fps=fps)
