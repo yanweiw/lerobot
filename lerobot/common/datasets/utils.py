@@ -119,8 +119,8 @@ def load_hf_dataset(repo_id: str, version: str, root: Path, split: str) -> datas
             import numpy as np
             with h5py.File(root, 'r') as hdf5_file:
                 # skip every 4th frame to match the original dataset
-                observations = np.array(hdf5_file['observations'])[:80004][::4]
-                timeouts = np.array(hdf5_file['timeouts'])[:80000][::4]
+                observations = np.array(hdf5_file['observations'])[:1000004][::4]
+                timeouts = np.array(hdf5_file['timeouts'])[:1000000][::4]
 
             def create_episode_and_frame_indices(timeouts):
                 episode_endings = np.where(timeouts)[0]  # Indices where episodes end

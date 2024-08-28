@@ -4,15 +4,23 @@ seed: 100000
 dataset_repo_id: maze2d
 dataset_root: '/home/rss/lerobot/data/maze2d-large-sparse-v1.hdf5'
 
+wandb:
+  enable: true
+hydra:
+  run:
+    # Set `dir` to where you would like to save all of the run outputs. If you run another training session
+    # with the same value for `dir` its contents will be overwritten unless you set `resume` to true.
+    dir: /mnt/data/lerobot/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${env.name}_${policy.name}_${hydra.job.name}
+
 training:
-  offline_steps: 200000
+  offline_steps: 100000
   online_steps: 0
   eval_freq: 0
   save_freq: 5000
   log_freq: 250
   save_checkpoint: true
 
-  batch_size: 64
+  batch_size: 256
   grad_clip_norm: 10
   lr: 1.0e-4
   lr_scheduler: cosine
@@ -40,7 +48,7 @@ policy:
 
   # Input / output structure.
   n_obs_steps: 2
-  horizon: 16
+  horizon: 64
   n_action_steps: 8
 
   input_shapes:
