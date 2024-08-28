@@ -5,12 +5,15 @@ dataset_repo_id: maze2d
 dataset_root: '/home/rss/lerobot/data/maze2d-large-sparse-v1.hdf5'
 
 wandb:
-  enable: false
+  enable: true
 hydra:
   run:
     # Set `dir` to where you would like to save all of the run outputs. If you run another training session
     # with the same value for `dir` its contents will be overwritten unless you set `resume` to true.
-    dir: /mnt/data/maze2d_act/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${env.name}_${policy.name}_${hydra.job.name}
+    dir: /mnt/data/maze2d_act/outputs/${now:%Y.%m.%d}/${hydra.job.name}
+  job:
+    name: ${now:%H.%M.%S}_${env.name}_${policy.name}
+
 device: "cuda:0"  # cpu
 
 training:
@@ -40,8 +43,8 @@ policy:
 
   # Input / output structure.
   n_obs_steps: 1
-  chunk_size: 100 # chunk_size
-  n_action_steps: 100
+  chunk_size: 64 # chunk_size
+  n_action_steps: 64
 
   input_shapes:
     # TODO(rcadene, alexander-soare): add variables for height and width from the dataset/env?
