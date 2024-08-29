@@ -77,9 +77,7 @@ if __name__ == "__main__":
     device = torch.device("cuda")
 
     pretrained_policy_path = Path(os.path.join(args.checkpoint, "pretrained_model"))  # Update path as necessary
-    # hydra_cfg = init_hydra_config(str(pretrained_policy_path / "config.yaml"))
-    # policy = make_policy(hydra_cfg=hydra_cfg, dataset_stats=make_dataset(hydra_cfg).stats)
-    # dataset = make_dataset(hydra_cfg)
+
     if args.policy in ["diffusion", "dp"]:
         policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
         policy.config.noise_scheduler_type = "DDIM"
@@ -98,6 +96,7 @@ if __name__ == "__main__":
     # Set colors
     WHITE = (255, 255, 255)
     RED = (255, 0, 0)
+    GRAY = (150, 150, 150)  # New color for the drawing
 
     # Create the screen
     screen = pygame.display.set_mode(size)
@@ -105,47 +104,63 @@ if __name__ == "__main__":
     clock = pygame.time.Clock()
 
     obj_pos = np.array([0, 0])  # Initialize the position of the red dot
+    draw_traj = []
+    drawing = False
+    drawing_finished = False
+    obj_history_xy = []
 
     running = True
     t = 0
-    obj_history_xy = []
     while running:
         # Handle events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
                 break
+            if any(pygame.mouse.get_pressed()):  # Check if mouse button is pressed
+                if not drawing:
+                    drawing = True
+                    draw_traj = []
+                draw_traj.append(np.array(pygame.mouse.get_pos()))
+            else:    
+                if drawing: # mouse released
+                    drawing = False
+                    drawing_finished = True
 
-        # Real-time inference based on mouse position
         mouse_pos = np.array(pygame.mouse.get_pos())
 
-        # keep track of history at least of policy config n_obs_steps
-        obj_history_xy.append(gui2xy(mouse_pos))
-        if len(obj_history_xy) < policy.config.n_obs_steps: # copy the last element to fill the history
-            obj_history_xy = obj_history_xy + [obj_history_xy[-1]] * (policy.config.n_obs_steps - len(obj_history_xy))
-        # keep only the last n_obs_steps    
-        if len(obj_history_xy) > policy.config.n_obs_steps:
-            obj_history_xy = obj_history_xy[-policy.config.n_obs_steps:]
-        
-        policy_wrapped.reset()
-        unnormed_obs = infer_target(policy_wrapped, np.array(obj_history_xy), t, batch_size=batch_size)
+        if drawing_finished:
+            # Keep the drawing on the screen
+            for point in draw_traj:
+                pygame.draw.circle(screen, GRAY, (int(point[0]), int(point[1])), 3)
+            # Check if mouse returns to the agent's location
+            if np.linalg.norm(mouse_pos - obj_pos) < 10:  # Threshold distance to reactivate the agent
+                drawing_finished = False
+                draw_traj = []
 
-        # Update the red dot position to match the mouse position
-        obj_pos = mouse_pos
+        if not drawing and not drawing_finished:
+            # Real-time inference based on mouse position
+            obj_history_xy.append(gui2xy(mouse_pos))
+            if len(obj_history_xy) < policy.config.n_obs_steps:  # Copy the last element to fill the history
+                obj_history_xy = obj_history_xy + [obj_history_xy[-1]] * (policy.config.n_obs_steps - len(obj_history_xy))
+            # Keep only the last n_obs_steps    
+            if len(obj_history_xy) > policy.config.n_obs_steps:
+                obj_history_xy = obj_history_xy[-policy.config.n_obs_steps:]
+            
+            policy_wrapped.reset()
+            unnormed_obs = infer_target(policy_wrapped, np.array(obj_history_xy), t, batch_size=batch_size)
+            # switch axis of unnormed_obs from (S, B, 2) to (B, S, 2)
+            unnormed_obs = np.swapaxes(unnormed_obs, 0, 1)
+            
+            # Update the red dot position to match the mouse position
+            obj_pos = mouse_pos
 
         # Clear the screen
         surface = pygame.surfarray.make_surface(255 - np.swapaxes(np.repeat(renderer_background[:, :, np.newaxis] * 255, 3, axis=2).astype(np.uint8), 0, 1))
         surface = pygame.transform.scale(surface, size)
         screen.blit(surface, (0, 0))
 
-        # # create a random batch (batch size 50) of 16 lenth trajectory from dataset as unnormed_obs
-        # unnormed_obs = np.zeros((batch_size, 64, 2))
-        # for i in range(batch_size):
-        #     rand_idx = np.random.randint(0, len(dataset.hf_dataset['action'])-64)
-        #     unnormed_obs[i] = np.array(dataset.hf_dataset['action'][rand_idx:rand_idx+64])        
-        # print('shape of unnormed_obs:', unnormed_obs.shape)
-
-        # Draw future predictions with time-based colors
+        # Draw future predictions with time-based colors as lines
         if unnormed_obs.size > 0:  # Check if normed_obs is not empty
             time_colors = generate_time_color_map(unnormed_obs.shape[1])
             for pred in unnormed_obs:
@@ -153,12 +168,18 @@ if __name__ == "__main__":
                     color = (time_colors[step_idx, :3] * 255).astype(int)
                     start_pos = xy2gui(pred[step_idx])
                     end_pos = xy2gui(pred[step_idx + 1])
-                    # pygame.draw.line(screen, color, start_pos, end_pos, 3)
-                    # draw a circle instead of line
-                    pygame.draw.circle(screen, color, start_pos, 3)
+                    pygame.draw.line(screen, color, start_pos, end_pos, 3)
+                    # pygame.draw.circle(screen, color, start_pos, 3)
+
 
         # Draw the red dot at the current mouse position (starting point for the predictions)
         pygame.draw.circle(screen, RED, (int(obj_pos[0]), int(obj_pos[1])), 8)
+
+        # Draw the recorded drawing
+        if drawing or drawing_finished:
+            for point in draw_traj:
+                pygame.draw.circle(screen, GRAY, (int(point[0]), int(point[1])), 5)
+
 
         pygame.display.flip()
         clock.tick(30)
