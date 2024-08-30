@@ -92,13 +92,13 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         return set(self.config.input_shapes)
 
     @torch.no_grad
-    def run_inference(self, observation_batch: dict[str, Tensor]) -> Tensor:
+    def run_inference(self, observation_batch: dict[str, Tensor], guide: Tensor | None = None) -> Tensor:
         observation_batch = self.normalize_inputs(observation_batch)
         if len(self.expected_image_keys) > 0:
             observation_batch["observation.images"] = torch.stack(
                 [observation_batch[k] for k in self.expected_image_keys], dim=-4
             )
-        actions = self.diffusion.generate_actions(observation_batch)
+        actions = self.diffusion.generate_actions(observation_batch, guide=guide)
         actions = self.unnormalize_outputs({"action": actions})["action"]
         return actions
 
@@ -163,7 +163,7 @@ class DiffusionModel(nn.Module):
 
     # ========= inference  ============
     def conditional_sample(
-        self, batch_size: int, global_cond: Tensor | None = None, generator: torch.Generator | None = None
+        self, batch_size: int, global_cond: Tensor | None = None, generator: torch.Generator | None = None, guide: Tensor | None = None
     ) -> Tensor:
         device = get_device_from_parameters(self)
         dtype = get_dtype_from_parameters(self)
@@ -185,10 +185,36 @@ class DiffusionModel(nn.Module):
                 torch.full(sample.shape[:1], t, dtype=torch.long, device=sample.device),
                 global_cond=global_cond,
             )
+
+            # add interaction gradient
+            if guide is not None and t > 50: # stop adding noise as it will distract the plan
+                grad = self.guide_gradient(model_output, guide)
+                assert grad.shape == model_output.shape
+                guide_ratio = 0.1 #1000
+                model_output = model_output + guide_ratio * grad
+
             # Compute previous image: x_t -> x_t-1
             sample = self.noise_scheduler.step(model_output, t, sample, generator=generator).prev_sample
 
         return sample
+    
+    def guide_gradient(self, naction, guide):
+        # naction: (B, pred_horizon, action_dim);
+        # guide: (guide_horizon, action_dim)
+        # print('noisy action shape:', naction.shape, 'guide shape:', guide.shape)
+        # print('mean and std of naction', naction.mean(), naction.std())
+        # print('mean and std of guide', guide.mean(), guide.std())
+
+        assert naction.shape[2] == 2 and guide.shape[1] == 2
+        indices = torch.linspace(0, guide.shape[0]-1, naction.shape[1], dtype=int)
+        guide = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
+        assert guide.shape == (1, naction.shape[1], naction.shape[2])
+        with torch.enable_grad():
+            naction.requires_grad_(True)
+            dist = torch.linalg.norm(naction - guide, dim=2).mean(dim=1) # (B,)
+            grad = torch.autograd.grad(dist, naction, grad_outputs=torch.ones_like(dist), create_graph=True)[0]
+            naction.detach()
+        return grad    
 
     def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
         """Encode image features and concatenate them all together along with the state vector."""
@@ -212,7 +238,7 @@ class DiffusionModel(nn.Module):
         # Concatenate features then flatten to (B, global_cond_dim).
         return torch.cat(global_cond_feats, dim=-1).flatten(start_dim=1)
 
-    def generate_actions(self, batch: dict[str, Tensor]) -> Tensor:
+    def generate_actions(self, batch: dict[str, Tensor], guide: Tensor | None = None) -> Tensor:
         """
         This function expects `batch` to have:
         {
@@ -230,7 +256,7 @@ class DiffusionModel(nn.Module):
         global_cond = self._prepare_global_conditioning(batch)  # (B, global_cond_dim)
 
         # run sampling
-        actions = self.conditional_sample(batch_size, global_cond=global_cond)
+        actions = self.conditional_sample(batch_size, global_cond=global_cond, guide=guide)
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
         start = n_obs_steps - 1
