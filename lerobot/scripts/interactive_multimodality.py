@@ -101,8 +101,8 @@ def run_inference(policy_wrapped, obs, timestamp, noise_std=0):
 
 # Uncomment/comment pairs of policies and window names.
 ls_window_names_and_policies = [
-    # ("Diffusion Policy (image)", dp_img_wrapped),
-    ("Diffusion Policy (keypoints)", dp_kp_wrapped),
+    ("Diffusion Policy (image)", dp_img_wrapped),
+    # ("Diffusion Policy (keypoints)", dp_kp_wrapped),
     ("Action Chunking Transformer", act_wrapped),
     # ("VQ-BeT", vqbet_wrapped),
 ]
