@@ -1,0 +1,10 @@
+# @package _global_
+
+fps: 10
+
+env:
+  name: kitchen_zarr
+  task: null
+  state_dim: 8
+  action_dim: 8
+  fps: ${fps}

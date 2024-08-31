@@ -27,6 +27,8 @@ from huggingface_hub import DatasetCard, HfApi, hf_hub_download, snapshot_downlo
 from PIL import Image as PILImage
 from safetensors.torch import load_file
 from torchvision import transforms
+from lerobot.common.datasets.push_dataset_to_hub._diffusion_policy_replay_buffer import (
+            ReplayBuffer as DiffusionPolicyReplayBuffer,)
 
 DATASET_CARD_TEMPLATE = """
 ---
@@ -146,6 +148,34 @@ def load_hf_dataset(repo_id: str, version: str, root: Path, split: str) -> datas
                 'index': index
             }
             hf_dataset = datasets.Dataset.from_dict(data_dict)
+        elif 'zarr' in root: # diffusion policy repo data format
+            import numpy as np
+            
+            def create_episode_and_frame_indices_from_episode_ends(episode_ends):
+                episode_lengths = np.diff(np.concatenate(([0], episode_ends)))  # Lengths of episodes
+                # Generate episode indices by repeating the episode number for each episode length
+                episode_index = np.repeat(np.arange(len(episode_lengths)), episode_lengths)
+                # Generate frame indices by concatenating ranges for each episode, restarting from 0
+                frame_index = np.concatenate([np.arange(length) for length in episode_lengths])
+                index = np.arange(episode_ends[-1])
+                return episode_index, frame_index, index   
+
+            zarr_data = DiffusionPolicyReplayBuffer.copy_from_path(zarr_path=root)
+            action = zarr_data['action']
+            state = zarr_data['state']
+            episode_ends = zarr_data.meta['episode_ends']
+            episode_index, frame_index, index = create_episode_and_frame_indices_from_episode_ends(episode_ends)
+            data_dict = {
+                'observation.state': state,
+                'observation.environment_state': state,
+                'action': action,
+                'episode_index': episode_index,
+                'frame_index': frame_index,
+                'timestamp': np.copy(frame_index)/10.0,
+                'index': index
+            }
+            hf_dataset = datasets.Dataset.from_dict(data_dict)
+
         else:
             hf_dataset = load_from_disk(str(Path(root) / repo_id / "train"))
             # TODO(rcadene): clean this which enables getting a subset of dataset
