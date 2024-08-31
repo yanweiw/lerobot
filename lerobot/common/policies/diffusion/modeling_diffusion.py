@@ -190,7 +190,7 @@ class DiffusionModel(nn.Module):
             if guide is not None and t > 50: # stop adding noise as it will distract the plan
                 grad = self.guide_gradient(model_output, guide)
                 assert grad.shape == model_output.shape
-                guide_ratio = 0.1 #1000
+                guide_ratio = 10 #1000
                 model_output = model_output + guide_ratio * grad
 
             # Compute previous image: x_t -> x_t-1

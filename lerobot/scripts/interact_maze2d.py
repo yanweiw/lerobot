@@ -214,7 +214,7 @@ if __name__ == "__main__":
 
 
         # Draw the red dot at the current mouse position (starting point for the predictions)
-        pygame.draw.circle(screen, RED, (int(obj_pos[0]), int(obj_pos[1])), 8)
+        pygame.draw.circle(screen, RED, (int(obj_pos[0]), int(obj_pos[1])), 20)
 
         # Draw the recorded drawing
         if drawing or keep_drawing:
