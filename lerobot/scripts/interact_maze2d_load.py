@@ -150,17 +150,42 @@ if __name__ == "__main__":
         if index < len(entries):
             return entries[index]
         else:
-            return None  # Or raise an exception if the index is out of range
+            print("loading out of bound")
+            return entries[-1]  # Or raise an exception if the index is out of range
 
     traj_point = 0
+    enable_mouse = True
+    store_mouse_pos =  np.array(pygame.mouse.get_pos())
+
     while running:
-        mouse_pos = np.array(pygame.mouse.get_pos())
+        if enable_mouse:
+            mouse_pos = np.array(pygame.mouse.get_pos())
 
         # Handle events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
                 break
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_0:
+                    print(f"Hey,loading point: {traj_point} !")
+                    entry =load_position_trajectory(traj_point)
+                    print(entry)
+                    guide = np.array(entry['data'])
+                    mouse_pos = xy2gui(np.array(entry['data'][0]))
+                    store_mouse_pos = mouse_pos
+                    traj_point += 1
+
+                if event.key == pygame.K_1:
+                    print("press 1 to toggle mouse")
+                    enable_mouse = not enable_mouse
+
+            if not enable_mouse:
+                mouse_pos = store_mouse_pos
+                # print("skip mouse actions")
+                break
+
             if any(pygame.mouse.get_pressed()):  # Check if mouse button is pressed
                 if not drawing:
                     drawing = True
@@ -171,14 +196,6 @@ if __name__ == "__main__":
                     drawing = False
                     keep_drawing = True
 
-        
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_0:
-                    print("Hey,loading point!")
-                    entry =load_position_trajectory(traj_point)
-                    print(entry)
-                    guide = np.array(entry['data'])
-                    mouse_pos = xy2gui(np.array(entry['data'][0]))
 
         if keep_drawing:
             for point in draw_traj:
