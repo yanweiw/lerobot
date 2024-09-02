@@ -137,14 +137,22 @@ if __name__ == "__main__":
     file_name = "save_maze_interact.json"
 
     # Open the file in append mode
-    file = open(file_name, "a+", buffering=1)
+    file = open(file_name, "r+", buffering=1)
 
-    def append_position_trajectory(position, trajectory):
-        # Create the dictionary
-        entry = {position: trajectory}
-        # Convert dictionary to JSON string and append to the file
-        file.write(json.dumps(entry) + "\n")
+    def load_position_trajectory(index):
+        # Move the file pointer to the beginning
+        file.seek(0)
+        
+        # Load all entries as a list of dictionaries
+        entries = [json.loads(line) for line in file]
+        
+        # Return the i-th item, if it exists
+        if index < len(entries):
+            return entries[index]
+        else:
+            return None  # Or raise an exception if the index is out of range
 
+    traj_point = 0
     while running:
         mouse_pos = np.array(pygame.mouse.get_pos())
 
@@ -165,9 +173,12 @@ if __name__ == "__main__":
 
         
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_0 and guide is not None:
-                    print("Hey,saving point!")
-                    append_position_trajectory("data", tuple(guide.tolist()))
+                if event.key == pygame.K_0:
+                    print("Hey,loading point!")
+                    entry =load_position_trajectory(traj_point)
+                    print(entry)
+                    guide = np.array(entry['data'])
+                    mouse_pos = xy2gui(np.array(entry['data'][0]))
 
         if keep_drawing:
             for point in draw_traj:
