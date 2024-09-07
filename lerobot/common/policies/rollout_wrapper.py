@@ -116,7 +116,8 @@ class PolicyRolloutWrapper:
             if strict_observation_timestamps:
                 raise RuntimeError(msg)
             else:
-                logging.warning(msg)
+                # logging.warning(msg)
+                pass
         with self._thread_lock:
             observation_sequence_batch = {
                 k: torch.stack(

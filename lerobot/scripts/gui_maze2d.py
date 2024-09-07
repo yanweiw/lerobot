@@ -16,29 +16,78 @@ from lerobot.common.datasets.factory import make_dataset
 
 fps = 10
 batch_size = 32  # visualize this many trajectories per inference
-renderer_background = np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                                [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
-                                [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-                                [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-                                [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
-                                [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
-                                [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
-                                [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-                                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]).astype(bool)
+maze = np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+                [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+                [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
+                [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]).astype(bool)
 
-def xy2gui(unnormed_xy):
-    maze_shape = renderer_background.shape
-    xy = unnormed_xy + 0.5  # Adjust normalization as necessary
-    x = xy[0] * size[0] / (maze_shape[0])
-    y = xy[1] * size[1] / (maze_shape[1])
+offset = 0.5  # offset to put the object in the center of the cell in maze background
+# GUI x coord 0 -> gui_size[0] #1200
+# GUI y coord 0 
+#         |
+#         v
+#       gui_size[1] #900
+# xy is in the same coordinate system as the background
+# bkg y coord 0 -> maze_shape[1] #12
+# bkg x coord 0
+#         |
+#         v
+#       maze_shape[0] #9
+                
+
+def check_collision(xy_traj):
+    """
+    input xy is in the same coordinate system as the maze background
+    """
+    assert xy_traj.shape[2] == 2, "Input must be a 2D array of (x, y) coordinates."
+    batch_size, num_steps, _ = xy_traj.shape
+    xy_traj = xy_traj.reshape(-1, 2)  # Shape (batch_size * num_steps, 2)
+
+    # Convert GUI coordinates to maze coordinates for all trajectories
+    xy_traj = np.clip(xy_traj, [0, 0], [maze.shape[0] - 1, maze.shape[1] - 1])  # Clip values to valid maze bounds
+
+    maze_x = np.round(xy_traj[:, 0]).astype(int)  # Convert to integer indices
+    maze_y = np.round(xy_traj[:, 1]).astype(int)
+
+    # Check for collisions by indexing the background
+    collisions = maze[maze_x, maze_y] 
+
+    # Reshape the result back to (batch_size, num_steps)
+    collisions = collisions.reshape(batch_size, num_steps)
+
+    # If any point in a trajectory collides, mark the entire trajectory as colliding
+    return np.any(collisions, axis=1)
+
+def blend_with_white(color, factor=0.5):
+    """
+    Blends the input color with white
+    """
+    white = np.array([255, 255, 255])
+    blended_color = (1 - factor) * np.array(color) + factor * white
+    return blended_color.astype(int)
+
+def report_collision_percentage(collisions):
+    num_trajectories = collisions.shape[0]
+    num_collisions = np.sum(collisions)
+    collision_percentage = (num_collisions / num_trajectories) * 100
+    print(f"{num_collisions}/{num_trajectories} trajectories are in collision ({collision_percentage:.2f}%).")
+    return collision_percentage
+
+def xy2gui(xy):
+    xy = xy + offset  # Adjust normalization as necessary
+    x = xy[0] * gui_size[1] / (maze.shape[0])
+    y = xy[1] * gui_size[0] / (maze.shape[1])
     return np.array([y, x], dtype=float)
 
 def gui2xy(gui):
-    maze_shape = renderer_background.shape
-    x = gui[1] / size[0] * maze_shape[0] - 0.5
-    y = gui[0] / size[1] * maze_shape[1] - 0.5
-    xy = np.array([x, y], dtype=float)
-    return xy
+    x = gui[1] / gui_size[1] * maze.shape[0] - offset
+    y = gui[0] / gui_size[0] * maze.shape[1] - offset
+    return np.array([x, y], dtype=float)
 
 def infer_target(policy_wrapped, obj_hist_xy, timestamp, batch_size=50):
     obj_hist_xy = obj_hist_xy[0]
@@ -91,18 +140,18 @@ if __name__ == "__main__":
 
     # Initialize Pygame
     pygame.init()
-    size = (1000, 1000)
+    gui_size = (1200, 900)
 
     # Set colors
     WHITE = (255, 255, 255)
     RED = (255, 0, 0)
 
     # Create the screen
-    screen = pygame.display.set_mode(size)
-    pygame.display.set_caption("Reach Goal")
+    screen = pygame.display.set_mode(gui_size)
+    pygame.display.set_caption("Maze")
     clock = pygame.time.Clock()
 
-    obj_pos = np.array([0, 0])  # Initialize the position of the red dot
+    obj_pos = np.array([0, 0]).reshape(1, 2)  # Initialize the position of the red dot
 
     running = True
     t = 0
@@ -116,39 +165,56 @@ if __name__ == "__main__":
         # Real-time inference based on mouse position
         mouse_pos = np.array(pygame.mouse.get_pos())
         obj_history_xy = [gui2xy(mouse_pos)]
+
+        # Check if the mouse is in collision
+        mouse_in_collision = check_collision(obj_history_xy[-1].reshape(1, 1, 2))[0]
+
+        # Change mouse color based on collision status
+        if mouse_in_collision:
+            mouse_color = (0, 255, 0)  # Green if in collision
+        else:
+            mouse_color = (255, 0, 0)  # Red if not in collision
         
         policy_wrapped.reset()
-        unnormed_obs = infer_target(policy_wrapped, np.array(obj_history_xy), t, batch_size=batch_size)
+        xy_pred = infer_target(policy_wrapped, obj_history_xy, t, batch_size=batch_size)
 
-        # Update the red dot position to match the mouse position
+        # Update the mouse dot position
         obj_pos = mouse_pos
 
         # Clear the screen
-        surface = pygame.surfarray.make_surface(255 - np.swapaxes(np.repeat(renderer_background[:, :, np.newaxis] * 255, 3, axis=2).astype(np.uint8), 0, 1))
-        surface = pygame.transform.scale(surface, size)
+        surface = pygame.surfarray.make_surface(255 - np.swapaxes(np.repeat(maze[:, :, np.newaxis] * 255, 3, axis=2).astype(np.uint8), 0, 1))
+        surface = pygame.transform.scale(surface, gui_size)
         screen.blit(surface, (0, 0))
 
-        # # create a random batch (batch size 50) of 16 lenth trajectory from dataset as unnormed_obs
-        # unnormed_obs = np.zeros((batch_size, 64, 2))
-        # for i in range(batch_size):
-        #     rand_idx = np.random.randint(0, len(dataset.hf_dataset['action'])-64)
-        #     unnormed_obs[i] = np.array(dataset.hf_dataset['action'][rand_idx:rand_idx+64])        
-        # print('shape of unnormed_obs:', unnormed_obs.shape)
-
         # Draw future predictions with time-based colors
-        if unnormed_obs.size > 0:  # Check if normed_obs is not empty
-            time_colors = generate_time_color_map(unnormed_obs.shape[1])
-            for pred in unnormed_obs:
+        if xy_pred.size > 0:  # Check if pred is not empty
+            time_colors = generate_time_color_map(xy_pred.shape[1])
+
+            # Check for collisions in parallel
+            collisions = check_collision(xy_pred)
+
+            # Report the percentage of trajectories in collision
+            report_collision_percentage(collisions)
+
+            for idx, pred in enumerate(xy_pred):
+                collision_detected = collisions[idx]
+
+                # Blend the colors with white only if the trajectory has any collisions
+                whiteness_factor = 0.8 if collision_detected else 0.0  # Make the trajectory paler if there's a collision
+                circle_size = 10 if collision_detected else 5
+
                 for step_idx in range(len(pred) - 1):
+                    # Get the time-based color and adjust it
                     color = (time_colors[step_idx, :3] * 255).astype(int)
+                    color = blend_with_white(color, whiteness_factor)
+
+                    # Draw the trajectory step
                     start_pos = xy2gui(pred[step_idx])
                     end_pos = xy2gui(pred[step_idx + 1])
-                    # pygame.draw.line(screen, color, start_pos, end_pos, 3)
-                    # draw a circle instead of line
-                    pygame.draw.circle(screen, color, start_pos, 3)
+                    pygame.draw.circle(screen, color, start_pos, circle_size)
 
-        # Draw the red dot at the current mouse position (starting point for the predictions)
-        pygame.draw.circle(screen, RED, (int(obj_pos[0]), int(obj_pos[1])), 8)
+        # Draw the mouse dot with the appropriate color based on collision detection
+        pygame.draw.circle(screen, mouse_color, (int(obj_pos[0]), int(obj_pos[1])), 20)
 
         pygame.display.flip()
         clock.tick(30)
