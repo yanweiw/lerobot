@@ -171,7 +171,9 @@ if __name__ == "__main__":
 
         # Change mouse color based on collision status
         if mouse_in_collision:
-            mouse_color = (0, 255, 0)  # Green if in collision
+            # blend red with white
+            mouse_color = (255, 0, 0)
+            mouse_color = blend_with_white(mouse_color, 0.8)
         else:
             mouse_color = (255, 0, 0)  # Red if not in collision
         
