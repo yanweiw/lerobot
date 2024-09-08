@@ -186,7 +186,7 @@ class DiffusionModel(nn.Module):
 
         MCMC_steps = 1
         if guide is not None:
-            MCMC_steps = 5
+            MCMC_steps = 3
         for t in self.noise_scheduler.timesteps:
             for i in range(MCMC_steps):
                 # Predict model output.
