@@ -17,6 +17,18 @@ from scipy.special import softmax
 
 class MazeEnv:
     def __init__(self):
+        # GUI x coord 0 -> gui_size[0] #1200
+        # GUI y coord 0 
+        #         |
+        #         v
+        #       gui_size[1] #900
+        # xy is in the same coordinate system as the background
+        # bkg y coord 0 -> maze_shape[1] #12
+        # bkg x coord 0
+        #         |
+        #         v
+        #       maze_shape[0] #9
+        
         self.maze = np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                             [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
                             [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
@@ -33,7 +45,7 @@ class MazeEnv:
 
         self.WHITE = (255, 255, 255)
         self.RED = (255, 0, 0)
-        self.GRAY = (150, 150, 150)
+        self.GRAY = (128, 128, 128)
         self.agent_color = self.RED
 
         # Initialize Pygame
@@ -94,7 +106,7 @@ class MazeEnv:
         if xy_pred is not None:
             time_colors = self.generate_time_color_map(xy_pred.shape[1])
             collisions = self.check_collision(xy_pred)
-            self.report_collision_percentage(collisions)
+            # self.report_collision_percentage(collisions)
             for idx, pred in enumerate(xy_pred):
                 for step_idx in range(len(pred) - 1):
                     color = (time_colors[step_idx, :3] * 255).astype(int)
@@ -115,7 +127,7 @@ class MazeEnv:
                 # pygame.draw.circle(self.screen, self.GRAY, (int(point[0]), int(point[1])), 5)
             # draw lines
             for i in range(len(self.draw_traj) - 1):
-                pygame.draw.line(self.screen, self.GRAY, self.draw_traj[i], self.draw_traj[i + 1], 5)
+                pygame.draw.line(self.screen, self.GRAY, self.draw_traj[i], self.draw_traj[i + 1], 10)
 
   
         pygame.display.flip()
@@ -167,7 +179,7 @@ class UnconditionalMaze(MazeEnv):
             guide = torch.from_numpy(guide).float().cuda()
 
         with torch.autocast(device_type="cuda"), seeded_context(0):
-            actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp)
+            actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp, guide=guide)
         actions = actions.cpu().numpy()
         return actions.transpose(1, 0, 2)
 
@@ -245,7 +257,8 @@ class ConditionalMaze(UnconditionalMaze):
                 else:
                     guide = None
                 xy_pred = self.infer_target(t, guide)
-                xy_pred, scores = self.similarity_score(xy_pred, guide)
+                scores = None
+                # xy_pred, scores = self.similarity_score(xy_pred, guide)
             
             self.update_screen(xy_pred, scores, (self.keep_drawing or self.drawing))
             self.clock.tick(30)

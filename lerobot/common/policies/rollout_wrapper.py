@@ -94,6 +94,7 @@ class PolicyRolloutWrapper:
         observation_timestamp_ms: int,
         action_timestamp_ms: int,
         strict_observation_timestamps: bool = False,
+        guide: Tensor | None = None,
     ):
         """
         Construct an observation sequence from the observation cache, use that as input for running inference,
@@ -140,7 +141,7 @@ class PolicyRolloutWrapper:
             key: observation_sequence_batch[key].to(device, non_blocking=True)
             for key in observation_sequence_batch
         }
-        actions = self.policy.run_inference(observation_sequence_batch).cpu()  # (batch, seq, action_dim)
+        actions = self.policy.run_inference(observation_sequence_batch, guide=guide).cpu()  # (batch, seq, action_dim)
 
         # Update action cache.
         with self._thread_lock:
@@ -187,6 +188,7 @@ class PolicyRolloutWrapper:
         first_action_timestamp: float,
         strict_observation_timestamps: bool = False,
         timeout: float | None = None,
+        guide: Tensor | None = None,
     ) -> Tensor | None:
         """Provide an observation and get an action sequence back.
 
@@ -276,6 +278,7 @@ class PolicyRolloutWrapper:
             observation_timestamp_ms,
             first_action_timestamp_ms,
             strict_observation_timestamps,
+            guide,
         )
 
         # Attempt to wait for inference to complete, within the bounds of the `timeout` parameter.
