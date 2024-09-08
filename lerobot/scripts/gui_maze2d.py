@@ -13,6 +13,7 @@ from lerobot.common.policies.rollout_wrapper import PolicyRolloutWrapper
 from lerobot.common.utils.utils import seeded_context, init_hydra_config
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.datasets.factory import make_dataset
+from scipy.special import softmax
 
 class MazeEnv:
     def __init__(self):
@@ -32,7 +33,8 @@ class MazeEnv:
 
         self.WHITE = (255, 255, 255)
         self.RED = (255, 0, 0)
-        self.mouse_color = self.RED
+        self.GRAY = (150, 150, 150)
+        self.agent_color = self.RED
 
         # Initialize Pygame
         pygame.init()
@@ -87,39 +89,71 @@ class MazeEnv:
         surface = pygame.transform.scale(surface, self.gui_size)
         self.screen.blit(surface, (0, 0))
 
-    def update_screen(self, xy_pred=None):
+    def update_screen(self, xy_pred=None, scores=None, keep_drawing=False):
         self.draw_maze_background()
         if xy_pred is not None:
             time_colors = self.generate_time_color_map(xy_pred.shape[1])
             collisions = self.check_collision(xy_pred)
             self.report_collision_percentage(collisions)
-
             for idx, pred in enumerate(xy_pred):
-                collision_detected = collisions[idx]
-                whiteness_factor = 0.8 if collision_detected else 0.0
-                circle_size = 10 if collision_detected else 5
-
                 for step_idx in range(len(pred) - 1):
                     color = (time_colors[step_idx, :3] * 255).astype(int)
-                    color = self.blend_with_white(color, whiteness_factor)
-
+                    if scores is None: # whiteness indicates collision
+                        whiteness_factor = 0.8 if collisions[idx] else 0.0
+                        color = self.blend_with_white(color, whiteness_factor)
+                        circle_size = 10 if collisions[idx] else 5
+                    else: # whiteness indicates similarity score
+                        color = color//3 + (color//3*2) * scores[idx] + 255//3*2 * (1-scores[idx])
+                        circle_size = int(3 + 20 * scores[idx])
                     start_pos = self.xy2gui(pred[step_idx])
                     end_pos = self.xy2gui(pred[step_idx + 1])
                     pygame.draw.circle(self.screen, color, start_pos, circle_size)
 
-        pygame.draw.circle(self.screen, self.mouse_color, (int(self.agent_gui_pos[0]), int(self.agent_gui_pos[1])), 20)
+        pygame.draw.circle(self.screen, self.agent_color, (int(self.agent_gui_pos[0]), int(self.agent_gui_pos[1])), 20)
+        if keep_drawing: # visualize the human drawing input
+            # for point in self.draw_traj:
+                # pygame.draw.circle(self.screen, self.GRAY, (int(point[0]), int(point[1])), 5)
+            # draw lines
+            for i in range(len(self.draw_traj) - 1):
+                pygame.draw.line(self.screen, self.GRAY, self.draw_traj[i], self.draw_traj[i + 1], 5)
+
+  
         pygame.display.flip()
+
+    def similarity_score(self, samples, guide=None):
+        # samples: (B, pred_horizon, action_dim)
+        # guide: (guide_horizon, action_dim)
+        if guide is None:
+            return samples, None
+        assert samples.shape[2] == 2 and guide.shape[1] == 2
+        indices = np.linspace(0, guide.shape[0]-1, samples.shape[1], dtype=int)
+        guide = np.expand_dims(guide[indices], axis=0) # (1, pred_horizon, action_dim)
+        guide = np.tile(guide, (samples.shape[0], 1, 1)) # (B, pred_horizon, action_dim)
+        scores = np.linalg.norm(samples[:, 1:] - guide[:, 1:], axis=2).mean(axis=1) # (B,)
+        scores = 1 - scores / (scores.max() + 1e-6) # normalize
+        temperature = 20
+        scores = softmax(scores*temperature)
+        # print('scores:', [f'{score:.3f}' for score in scores])
+        # normalize the score to be between 0 and 1
+        scores = (scores - scores.min()) / (scores.max() - scores.min())
+        # sort the predictions based on scores, from smallest to largest, so that larger scores will be drawn on top
+        sort_idx = np.argsort(scores)
+        samples = samples[sort_idx]
+        scores = scores[sort_idx]  
+        return samples, scores
 
 class UnconditionalMaze(MazeEnv):
     def __init__(self, policy):
         super().__init__()
-        self.mouse = None
-        self.mouse_in_collision = False
+        self.mouse_pos = None
+        self.agent_in_collision = False
         self.agent_history_xy = []
         self.policy_wrapped = policy
 
-    def infer_target(self, timestamp):
-        agent_hist_xy = self.agent_history_xy[-1]
+    def infer_target(self, timestamp, guide=None):
+        self.policy_wrapped.reset()
+        agent_hist_xy = self.agent_history_xy[-1] # rely on policy wrapper to fill the history
+
         obs_batch = {
             "observation.state": einops.repeat(
                 torch.from_numpy(agent_hist_xy).float().cuda(), "d -> b d", b=self.batch_size
@@ -128,35 +162,92 @@ class UnconditionalMaze(MazeEnv):
         obs_batch["observation.environment_state"] = einops.repeat(
             torch.from_numpy(agent_hist_xy).float().cuda(), "d -> b d", b=self.batch_size
         )
-        with torch.inference_mode(), torch.autocast(device_type="cuda"), seeded_context(0):
-            actions = policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp)
+        
+        if guide is not None:
+            guide = torch.from_numpy(guide).float().cuda()
+
+        with torch.autocast(device_type="cuda"), seeded_context(0):
+            actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp)
         actions = actions.cpu().numpy()
         return actions.transpose(1, 0, 2)
 
-    def update_agent_gui_pos(self, history_len=1):
-        self.mouse = np.array(pygame.mouse.get_pos())
-        self.mouse_in_collision = self.check_collision(self.gui2xy(self.mouse).reshape(1, 1, 2))[0]
-        if self.mouse_in_collision:
-            self.mouse_color = self.blend_with_white(self.RED, 0.8)
+    def update_mouse_pos(self):
+        self.mouse_pos = np.array(pygame.mouse.get_pos())
+        self.agent_in_collision = self.check_collision(self.gui2xy(self.agent_gui_pos).reshape(1, 1, 2))[0]
+        if self.agent_in_collision:
+            self.agent_color = self.blend_with_white(self.RED, 0.8)
         else:
-            self.mouse_color = self.RED
+            self.agent_color = self.RED
 
-        self.agent_gui_pos = self.mouse.copy()
+    def update_agent_pos(self, history_len=1):
+        self.agent_gui_pos = self.mouse_pos.copy()
         self.agent_history_xy.append(self.gui2xy(self.agent_gui_pos))
         self.agent_history_xy = self.agent_history_xy[-history_len:]
 
     def run(self):
         t = 0
         while self.running:
+            self.update_mouse_pos()
+            
+            # Handle events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
                     break
 
-            self.update_agent_gui_pos()
-            self.policy_wrapped.reset()
+            self.update_agent_pos()
             xy_pred = self.infer_target(t)
             self.update_screen(xy_pred)
+            self.clock.tick(30)
+            t += 1 / self.fps
+
+        pygame.quit()
+
+
+class ConditionalMaze(UnconditionalMaze):
+    def __init__(self, policy):
+        super().__init__(policy)
+        self.drawing = False
+        self.keep_drawing = False
+        self.draw_traj = []
+
+    def run(self):
+        t = 0
+        while self.running:
+            self.update_mouse_pos()
+
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    break
+                if any(pygame.mouse.get_pressed()):  # Check if mouse button is pressed
+                    if not self.drawing:
+                        self.drawing = True
+                        self.draw_traj = []
+                    self.draw_traj.append(self.mouse_pos)
+                else: # mouse released
+                    if self.drawing: 
+                        self.drawing = False # finish drawing action
+                        self.keep_drawing = True # keep visualizing the drawing
+
+            if self.keep_drawing: # visualize the human drawing input
+                # Check if mouse returns to the agent's location
+                if np.linalg.norm(self.mouse_pos - self.agent_gui_pos) < 20:  # Threshold distance to reactivate the agent
+                    self.keep_drawing = False # delete the drawing
+                    self.draw_traj = []
+
+            if not self.drawing: # inference mode
+                if not self.keep_drawing:
+                    self.update_agent_pos()
+                if len(self.draw_traj) > 0:
+                    guide = np.array([self.gui2xy(point) for point in self.draw_traj])
+                else:
+                    guide = None
+                xy_pred = self.infer_target(t, guide)
+                xy_pred, scores = self.similarity_score(xy_pred, guide)
+            
+            self.update_screen(xy_pred, scores, (self.keep_drawing or self.drawing))
             self.clock.tick(30)
             t += 1 / self.fps
 
@@ -166,6 +257,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', "--checkpoint", type=str, help="Path to the checkpoint")
     parser.add_argument('-p', '--policy', type=str, help="Policy name")
+    parser.add_argument('-u', '--unconditional', action='store_true', help="Unconditional Maze")
     args = parser.parse_args()
 
     # Load policy from the new codebase
@@ -186,5 +278,8 @@ if __name__ == "__main__":
     policy.eval()
     policy_wrapped = PolicyRolloutWrapper(policy, fps=10)  # fps and other params can be adjusted
 
-    interactiveMaze = UnconditionalMaze(policy_wrapped)
+    if args.unconditional:
+        interactiveMaze = UnconditionalMaze(policy_wrapped)
+    else:
+        interactiveMaze = ConditionalMaze(policy_wrapped)
     interactiveMaze.run()
