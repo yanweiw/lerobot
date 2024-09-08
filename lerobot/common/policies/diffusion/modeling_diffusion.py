@@ -177,50 +177,46 @@ class DiffusionModel(nn.Module):
             device=device,
             generator=generator,
         )
-        if guide is not None:
-            indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
-            init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
-            sample = 0.1*sample + init_sample
+        # if guide is not None:
+        #     indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
+        #     init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
+        #     sample = 0.1*sample + init_sample
 
         self.noise_scheduler.set_timesteps(self.num_inference_steps)
 
         MCMC_steps = 1
         if guide is not None:
-            MCMC_steps = 1
+            MCMC_steps = 5
         for t in self.noise_scheduler.timesteps:
             for i in range(MCMC_steps):
                 # Predict model output.
-                # model_output = self.unet(
-                #     sample,
-                #     torch.full(sample.shape[:1], t, dtype=torch.long, device=sample.device),
-                #     global_cond=global_cond,
-                # )
+                model_output = self.unet(
+                    sample,
+                    torch.full(sample.shape[:1], t, dtype=torch.long, device=sample.device),
+                    global_cond=global_cond,
+                )
 
                 # add interaction gradient
                 if guide is not None and t > 0: # stop adding noise as it will distract the plan
-                    # print('sample and guide min and max:', sample.min().cpu().numpy(), sample.max().cpu().numpy(), guide.min().cpu().numpy(), guide.max().cpu().numpy())
-                    # print('sample and guide shape:', sample.shape, guide.shape)
 
-                    for i in range(20):
-                        grad = self.guide_gradient(sample, guide)
-                        guide_ratio = 10 #1000
-                        # print('norm of sample and grad per dim:', torch.linalg.norm(sample, dim=2).mean().cpu().numpy(), torch.linalg.norm(grad, dim=1).mean().cpu().numpy())
-                        # model_output = model_output + guide_ratio * grad
-                        sample = sample - 0.1 * grad
+                    grad = self.guide_gradient(sample, guide)
+                    guide_ratio = 100 #1000
+                    model_output = model_output + guide_ratio * grad
+                    # sample = sample - 0.1 * grad
 
-                # # Compute previous image: x_t -> x_t-1
-                # scheduler_output = self.noise_scheduler.step(model_output, t, sample, generator=generator)
-                # prev_sample = scheduler_output.prev_sample
-                # clean_sample = scheduler_output.pred_original_sample
+                # Compute previous image: x_t -> x_t-1
+                scheduler_output = self.noise_scheduler.step(model_output, t, sample, generator=generator)
+                prev_sample = scheduler_output.prev_sample
+                clean_sample = scheduler_output.pred_original_sample
 
-                # if i < MCMC_steps - 1:
-                #     # print('mcmc step i: ', i, 'at t: ', t)
-                #     std = 1
-                #     noise = std * torch.randn(clean_sample.shape, device=clean_sample.device)
-                #     sample = self.noise_scheduler.add_noise(clean_sample, noise, t)
-                # else:
-                #     # print('final mcmc step at t:', t)
-                #     sample = prev_sample
+                if i < MCMC_steps - 1:
+                    # print('mcmc step i: ', i, 'at t: ', t)
+                    std = 1
+                    noise = std * torch.randn(clean_sample.shape, device=clean_sample.device)
+                    sample = self.noise_scheduler.add_noise(clean_sample, noise, t)
+                else:
+                    # print('final mcmc step at t:', t)
+                    sample = prev_sample
 
         return sample
     
