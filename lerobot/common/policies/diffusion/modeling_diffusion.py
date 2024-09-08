@@ -200,7 +200,7 @@ class DiffusionModel(nn.Module):
                 if guide is not None and t > 0: # stop adding noise as it will distract the plan
 
                     grad = self.guide_gradient(sample, guide)
-                    guide_ratio = 100 #1000
+                    guide_ratio = 100 # best ratio for mcmc, 20 best ratio for non-mcmc
                     model_output = model_output + guide_ratio * grad
                     # sample = sample - 0.1 * grad
 
