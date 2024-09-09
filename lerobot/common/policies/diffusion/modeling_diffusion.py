@@ -164,7 +164,7 @@ class DiffusionModel(nn.Module):
         else:
             self.num_inference_steps = config.num_inference_steps
 
-        assert alginment_strategy in ['post-hoc', 'guided-diffusion', 'recurrent-diffusion', 'biased-initialization'], 'Invalid alignment strategy: ' + str(alginment_strategy)
+        assert alginment_strategy in ['post-hoc', 'guided-diffusion', 'recurrent-diffusion', 'biased-initialization', 'output-perturb'], 'Invalid alignment strategy: ' + str(alginment_strategy)
         self.alignment_strategy = alginment_strategy
 
     # ========= inference  ============

@@ -68,6 +68,17 @@ class MazeEnv:
         collisions = self.maze[maze_x, maze_y]
         collisions = collisions.reshape(batch_size, num_steps)
         return np.any(collisions, axis=1)
+    
+    def find_first_collision_from_GUI(self, gui_traj):
+        assert gui_traj.shape[1] == 2, "Input must be a 2D array"
+        xy_traj = np.array([self.gui2xy(point) for point in gui_traj])
+        xy_traj = np.clip(xy_traj, [0, 0], [self.maze.shape[0] - 1, self.maze.shape[1] - 1])
+        maze_x = np.round(xy_traj[:, 0]).astype(int)
+        maze_y = np.round(xy_traj[:, 1]).astype(int)
+        collisions = self.maze[maze_x, maze_y]
+        # find the first index of many possible collisions
+        first_collision_idx = np.argmax(collisions)
+        return first_collision_idx
 
     def blend_with_white(self, color, factor=0.5):
         white = np.array([255, 255, 255])
@@ -308,20 +319,52 @@ class ConditionalMaze(UnconditionalMaze):
         self.trial_idx += 1
 
 class MazeExp(ConditionalMaze):
-    def __init__(self, trials, policy, vis_dp_dynamics=False, savepath=None):
+    def __init__(self, trials, policy, vis_dp_dynamics=False, savepath=None, alignment_strategy=None):
         super().__init__(policy, vis_dp_dynamics, savepath)
         assert trials is not None
         self.trials = trials
         self.trial_idx = 0
+        self.alignment_strategy = alignment_strategy
+        print(f"Alignment strategy: {alignment_strategy}")
 
     def run(self):
         t = 0
         while self.running:
             self.draw_traj = self.trials[self.trial_idx]["guide"]
-            self.update_agent_pos(self.trials[self.trial_idx]["agent_pos"])
-            pred_traj = np.array(self.trials[self.trial_idx]["pred_traj"])
-            # xy_pred, scores = self.similarity_score(xy_pred, draw_traj)
-            collisions = np.array(self.trials[self.trial_idx]["collisions"])
+            if len(self.draw_traj) == 0: # skip empty trials
+                self.trial_idx += 1
+                continue
+            first_collision_idx = self.find_first_collision_from_GUI(np.array(self.draw_traj))
+            if first_collision_idx <= 0: # no collision or all collisions
+                if np.array(self.trials[self.trial_idx]["collisions"]).all():
+                    print(f"Skipping trial {self.trial_idx} which has all collisions.")
+                    self.trial_idx += 1
+                    continue
+
+            if self.alignment_strategy == 'output-perturb':
+                # find the location before the first collision to initialize the agent
+                if first_collision_idx <= 0: # no collision or all collisions
+                    perturbed_pos = self.draw_traj[20]
+                else:
+                    first_collision_idx = min(first_collision_idx, 20)
+                    perturbed_pos = self.draw_traj[first_collision_idx - 1]
+                self.update_agent_pos(perturbed_pos)
+            else:
+                self.update_agent_pos(self.trials[self.trial_idx]["agent_pos"])
+
+            if self.alignment_strategy == 'post-hoc': # don't redo inference
+                pred_traj = np.array(self.trials[self.trial_idx]["pred_traj"])
+                # xy_pred, scores = self.similarity_score(xy_pred, draw_traj)
+                collisions = np.array(self.trials[self.trial_idx]["collisions"])
+                self.update_screen(pred_traj, collisions, scores=None, keep_drawing=True, traj_in_gui_space=True)
+            else: # redo inference
+                # infer the target based on the guide
+                guide = np.array([self.gui2xy(point) for point in self.draw_traj])
+                pred_traj = self.infer_target(t, guide, visualizer=(self if self.vis_dp_dynamics else None))
+                # xy_pred, scores = self.similarity_score(xy_pred, guide)
+                collisions = self.check_collision(pred_traj)
+                self.update_screen(pred_traj, collisions, scores=None, keep_drawing=True, traj_in_gui_space=False)
+
             # Handle events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -331,7 +374,6 @@ class MazeExp(ConditionalMaze):
                     if event.key == pygame.K_0 and self.file is not None:
                         self.trial_idx += 1
 
-            self.update_screen(pred_traj, collisions, scores=None, keep_drawing=True, traj_in_gui_space=True)
             self.clock.tick(30)
             t += 1 / self.fps
 
@@ -343,6 +385,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', "--checkpoint", type=str, help="Path to the checkpoint")
     parser.add_argument('-p', '--policy', type=str, help="Policy name")
     parser.add_argument('-u', '--unconditional', action='store_true', help="Unconditional Maze")
+    parser.add_argument('-op', '--output-perturb', action='store_true', help="Output perturbation")
     parser.add_argument('-ph', '--post-hoc', action='store_true', help="Post-hoc alignment")
     parser.add_argument('-bi', '--biased-initialization', action='store_true', help="Biased initialization")
     parser.add_argument('-gd', '--guided-diffusion', action='store_true', help="Guided diffusion")
@@ -367,9 +410,11 @@ if __name__ == "__main__":
     # Create and load the policy
     device = torch.device("cuda")
 
-    alignment_strategy = None
+    alignment_strategy = 'post-hoc'
     if args.post_hoc:
         alignment_strategy = 'post-hoc'
+    elif args.output_perturb:
+        alignment_strategy = 'output-perturb'
     elif args.biased_initialization:
         alignment_strategy = 'biased-initialization'
     elif args.guided_diffusion:
@@ -392,7 +437,7 @@ if __name__ == "__main__":
     if args.unconditional:
         interactiveMaze = UnconditionalMaze(policy_wrapped)
     elif trials is not None:
-        interactiveMaze = MazeExp(trials, policy_wrapped, args.vis_dp_dynamics, args.savepath)
+        interactiveMaze = MazeExp(trials, policy_wrapped, args.vis_dp_dynamics, args.savepath, alignment_strategy)
     else:
         interactiveMaze = ConditionalMaze(policy_wrapped, args.vis_dp_dynamics, args.savepath)
     interactiveMaze.run()
