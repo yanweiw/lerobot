@@ -210,7 +210,7 @@ class DiffusionModel(nn.Module):
                 time.sleep(0.1)
 
             if t > start_influence_step:
-                print('SKIPPING TIMESTEP: ', t)
+                # print('SKIPPING TIMESTEP: ', t)
                 continue
             for i in range(MCMC_steps):
                 # Predict model output.
@@ -227,7 +227,8 @@ class DiffusionModel(nn.Module):
                     model_output = model_output + guide_ratio * grad
                     # sample = sample - 0.1 * grad
                 else:
-                    print('NOT ADDING INTERACTION GRADIENT AT TIMESTEP: ', t)
+                    pass
+                    # print('NOT ADDING INTERACTION GRADIENT AT TIMESTEP: ', t)
 
                 # Compute previous image: x_t -> x_t-1
                 scheduler_output = self.noise_scheduler.step(model_output, t, sample, generator=generator)
@@ -235,12 +236,12 @@ class DiffusionModel(nn.Module):
                 clean_sample = scheduler_output.pred_original_sample
 
                 if i < MCMC_steps - 1:
-                    print('mcmc step i: ', i, 'at t: ', t)
+                    # print('mcmc step i: ', i, 'at t: ', t)
                     std = 1
                     noise = std * torch.randn(clean_sample.shape, device=clean_sample.device)
                     sample = self.noise_scheduler.add_noise(clean_sample, noise, t)
                 else:
-                    print('final diffusion step at t:', t)
+                    # print('final diffusion step at t:', t)
                     sample = prev_sample
 
         return sample

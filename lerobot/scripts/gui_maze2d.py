@@ -15,6 +15,7 @@ from lerobot.common.policies.factory import make_policy
 from lerobot.common.datasets.factory import make_dataset
 from scipy.special import softmax
 import time
+import json
 
 class MazeEnv:
     def __init__(self):
@@ -102,11 +103,12 @@ class MazeEnv:
         surface = pygame.transform.scale(surface, self.gui_size)
         self.screen.blit(surface, (0, 0))
 
-    def update_screen(self, xy_pred=None, scores=None, keep_drawing=False):
+    def update_screen(self, xy_pred=None, collisions=None, scores=None, keep_drawing=False, traj_in_gui_space=False):
         self.draw_maze_background()
         if xy_pred is not None:
             time_colors = self.generate_time_color_map(xy_pred.shape[1])
-            collisions = self.check_collision(xy_pred)
+            if collisions is None:
+                collisions = self.check_collision(xy_pred)
             # self.report_collision_percentage(collisions)
             for idx, pred in enumerate(xy_pred):
                 for step_idx in range(len(pred) - 1):
@@ -118,8 +120,12 @@ class MazeEnv:
                     else: # whiteness indicates similarity score
                         color = color//3 + (color//3*2) * scores[idx] + 255//3*2 * (1-scores[idx])
                         circle_size = int(3 + 20 * scores[idx])
-                    start_pos = self.xy2gui(pred[step_idx])
-                    end_pos = self.xy2gui(pred[step_idx + 1])
+                    if traj_in_gui_space:
+                        start_pos = pred[step_idx]
+                        end_pos = pred[step_idx + 1]
+                    else:
+                        start_pos = self.xy2gui(pred[step_idx])
+                        end_pos = self.xy2gui(pred[step_idx + 1])
                     pygame.draw.circle(self.screen, color, start_pos, circle_size)
 
         pygame.draw.circle(self.screen, self.agent_color, (int(self.agent_gui_pos[0]), int(self.agent_gui_pos[1])), 20)
@@ -187,15 +193,16 @@ class UnconditionalMaze(MazeEnv):
 
     def update_mouse_pos(self):
         self.mouse_pos = np.array(pygame.mouse.get_pos())
-        self.agent_in_collision = self.check_collision(self.gui2xy(self.agent_gui_pos).reshape(1, 1, 2))[0]
+
+    def update_agent_pos(self, new_agent_pos, history_len=1):
+        self.agent_gui_pos = new_agent_pos
+        agent_xy_pos = self.gui2xy(self.agent_gui_pos)
+        self.agent_in_collision = self.check_collision(agent_xy_pos.reshape(1, 1, 2))[0]
         if self.agent_in_collision:
             self.agent_color = self.blend_with_white(self.RED, 0.8)
         else:
-            self.agent_color = self.RED
-
-    def update_agent_pos(self, history_len=1):
-        self.agent_gui_pos = self.mouse_pos.copy()
-        self.agent_history_xy.append(self.gui2xy(self.agent_gui_pos))
+            self.agent_color = self.RED        
+        self.agent_history_xy.append(agent_xy_pos)
         self.agent_history_xy = self.agent_history_xy[-history_len:]
 
     def run(self):
@@ -209,7 +216,7 @@ class UnconditionalMaze(MazeEnv):
                     self.running = False
                     break
 
-            self.update_agent_pos()
+            self.update_agent_pos(self.mouse_pos.copy())
             xy_pred = self.infer_target(t)
             self.update_screen(xy_pred)
             self.clock.tick(30)
@@ -219,12 +226,21 @@ class UnconditionalMaze(MazeEnv):
 
 
 class ConditionalMaze(UnconditionalMaze):
-    def __init__(self, policy, vis_dp_dynamics=False):
+    def __init__(self, policy, vis_dp_dynamics=False, savepath=None):
         super().__init__(policy)
         self.drawing = False
         self.keep_drawing = False
-        self.draw_traj = []
         self.vis_dp_dynamics = vis_dp_dynamics
+        self.file = None
+        self.savepath = savepath
+        if savepath is not None:
+            self.file = open(savepath, "a+", buffering=1)
+            self.trial_idx = 0
+        self.draw_traj = [] # gui coordinates
+        self.guide = None # numpy array
+        self.xy_pred = None # numpy array
+        self.collisions = None # boolean array
+        self.scores = None # numpy array
 
     def run(self):
         t = 0
@@ -245,6 +261,9 @@ class ConditionalMaze(UnconditionalMaze):
                     if self.drawing: 
                         self.drawing = False # finish drawing action
                         self.keep_drawing = True # keep visualizing the drawing
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_0 and self.file is not None:
+                        self.save_trials()             
 
             if self.keep_drawing: # visualize the human drawing input
                 # Check if mouse returns to the agent's location
@@ -254,22 +273,70 @@ class ConditionalMaze(UnconditionalMaze):
 
             if not self.drawing: # inference mode
                 if not self.keep_drawing:
-                    self.update_agent_pos()
+                    self.update_agent_pos(self.mouse_pos.copy())
                 if len(self.draw_traj) > 0:
-                    guide = np.array([self.gui2xy(point) for point in self.draw_traj])
+                    self.guide = np.array([self.gui2xy(point) for point in self.draw_traj])
                 else:
-                    guide = None
-                xy_pred = self.infer_target(t, guide, visualizer=(self if self.vis_dp_dynamics and self.keep_drawing else None))
-                scores = None
+                    self.guide = None
+                self.xy_pred = self.infer_target(t, self.guide, visualizer=(self if self.vis_dp_dynamics and self.keep_drawing else None))
+                self.scores = None
                 # xy_pred, scores = self.similarity_score(xy_pred, guide)
-            
-            self.update_screen(xy_pred, scores, (self.keep_drawing or self.drawing))
+                self.collisions = self.check_collision(self.xy_pred)
+
+            self.update_screen(self.xy_pred, self.collisions, self.scores, (self.keep_drawing or self.drawing))
             if self.vis_dp_dynamics and not self.drawing and self.keep_drawing:
                 time.sleep(1)
             self.clock.tick(30)
             t += 1 / self.fps
 
         pygame.quit()
+
+    def save_trials(self):
+        b, t, _ = self.xy_pred.shape
+        xy_pred = self.xy_pred.reshape(b*t, 2)
+        pred_gui_traj = [self.xy2gui(xy) for xy in xy_pred]
+        pred_gui_traj = np.array(pred_gui_traj).reshape(b, t, 2)
+        entry = {
+            "trial_idx": self.trial_idx,
+            "agent_pos": self.agent_gui_pos.tolist(),
+            "guide": np.array(self.draw_traj).tolist(),
+            "pred_traj": pred_gui_traj.astype(int).tolist(),
+            "collisions": self.collisions.tolist()
+        }
+        self.file.write(json.dumps(entry) + "\n")
+        print(f"Trial {self.trial_idx} saved to {self.savepath}.")
+        self.trial_idx += 1
+
+class MazeExp(ConditionalMaze):
+    def __init__(self, trials, policy, vis_dp_dynamics=False, savepath=None):
+        super().__init__(policy, vis_dp_dynamics, savepath)
+        assert trials is not None
+        self.trials = trials
+        self.trial_idx = 0
+
+    def run(self):
+        t = 0
+        while self.running:
+            self.draw_traj = self.trials[self.trial_idx]["guide"]
+            self.update_agent_pos(self.trials[self.trial_idx]["agent_pos"])
+            pred_traj = np.array(self.trials[self.trial_idx]["pred_traj"])
+            # xy_pred, scores = self.similarity_score(xy_pred, draw_traj)
+            collisions = np.array(self.trials[self.trial_idx]["collisions"])
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    break
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_0 and self.file is not None:
+                        self.trial_idx += 1
+
+            self.update_screen(pred_traj, collisions, scores=None, keep_drawing=True, traj_in_gui_space=True)
+            self.clock.tick(30)
+            t += 1 / self.fps
+
+        pygame.quit()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -281,9 +348,18 @@ if __name__ == "__main__":
     parser.add_argument('-gd', '--guided-diffusion', action='store_true', help="Guided diffusion")
     parser.add_argument('-rd', '--recurrent-diffusion', action='store_true', help="Recurrent diffusion")
     parser.add_argument('-v', '--vis_dp_dynamics', action='store_true', help="Visualize dynamics in DP")
+    parser.add_argument('-s', '--savepath', type=str, default='exp00.json', help="Filename to save the drawing")
+    parser.add_argument('-l', '--loadpath', type=str, default=None, help="Filename to load the drawing")
 
     args = parser.parse_args()
-
+    
+    if args.loadpath is not None:
+        # Load saved trails
+        file = open(args.loadpath, "r+", buffering=1)
+        file.seek(0)
+        trials = [json.loads(line) for line in file]
+    else:
+        trials = None
 
     # Load policy from the new codebase
     pretrained_policy_path = Path(os.path.join(args.checkpoint, "pretrained_model"))
@@ -315,6 +391,8 @@ if __name__ == "__main__":
 
     if args.unconditional:
         interactiveMaze = UnconditionalMaze(policy_wrapped)
+    elif trials is not None:
+        interactiveMaze = MazeExp(trials, policy_wrapped, args.vis_dp_dynamics, args.savepath)
     else:
-        interactiveMaze = ConditionalMaze(policy_wrapped, args.vis_dp_dynamics)
+        interactiveMaze = ConditionalMaze(policy_wrapped, args.vis_dp_dynamics, args.savepath)
     interactiveMaze.run()
