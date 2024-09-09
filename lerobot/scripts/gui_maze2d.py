@@ -162,26 +162,27 @@ class UnconditionalMaze(MazeEnv):
         self.agent_history_xy = []
         self.policy_wrapped = policy
 
-    def infer_target(self, timestamp, guide=None):
+    def infer_target(self, timestamp, guide=None, visualizer=None):
         self.policy_wrapped.reset()
         agent_hist_xy = self.agent_history_xy[-1] # rely on policy wrapper to fill the history
+        agent_hist_xy = np.array(agent_hist_xy).reshape(1, 2).repeat(2, axis=0)
 
         obs_batch = {
             "observation.state": einops.repeat(
-                torch.from_numpy(agent_hist_xy).float().cuda(), "d -> b d", b=self.batch_size
+                torch.from_numpy(agent_hist_xy).float().cuda(), "t d -> b t d", b=self.batch_size
             )
         }
         obs_batch["observation.environment_state"] = einops.repeat(
-            torch.from_numpy(agent_hist_xy).float().cuda(), "d -> b d", b=self.batch_size
+            torch.from_numpy(agent_hist_xy).float().cuda(), "t d -> b t d", b=self.batch_size
         )
         
         if guide is not None:
             guide = torch.from_numpy(guide).float().cuda()
 
         with torch.autocast(device_type="cuda"), seeded_context(0):
-            actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp, guide=guide)
-        actions = actions.cpu().numpy()
-        return actions.transpose(1, 0, 2)
+            # actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp, guide=guide, visualizer=None).transpose(1, 0, 2).cpu().numpy()
+            actions = policy_wrapped.policy.run_inference(obs_batch, guide=guide, visualizer=visualizer).cpu().numpy() # directly call the policy in order to visualize the intermediate steps
+        return actions
 
     def update_mouse_pos(self):
         self.mouse_pos = np.array(pygame.mouse.get_pos())
@@ -256,7 +257,7 @@ class ConditionalMaze(UnconditionalMaze):
                     guide = np.array([self.gui2xy(point) for point in self.draw_traj])
                 else:
                     guide = None
-                xy_pred = self.infer_target(t, guide)
+                xy_pred = self.infer_target(t, guide, visualizer=self)
                 scores = None
                 # xy_pred, scores = self.similarity_score(xy_pred, guide)
             
@@ -271,6 +272,10 @@ if __name__ == "__main__":
     parser.add_argument('-c', "--checkpoint", type=str, help="Path to the checkpoint")
     parser.add_argument('-p', '--policy', type=str, help="Policy name")
     parser.add_argument('-u', '--unconditional', action='store_true', help="Unconditional Maze")
+    parser.add_argument('-ph', '--post-hoc', action='store_true', help="Post-hoc alignment")
+    parser.add_argument('-bi', '--biased-initialization', action='store_true', help="Biased initialization")
+    parser.add_argument('-gd', '--guided-diffusion', action='store_true', help="Guided diffusion")
+    parser.add_argument('-rd', '--recurrent-diffusion', action='store_true', help="Recurrent diffusion")
     args = parser.parse_args()
 
     # Load policy from the new codebase
@@ -279,8 +284,18 @@ if __name__ == "__main__":
     # Create and load the policy
     device = torch.device("cuda")
 
+    alignment_strategy = None
+    if args.post_hoc:
+        alignment_strategy = 'post-hoc'
+    elif args.biased_initialization:
+        alignment_strategy = 'biased-initialization'
+    elif args.guided_diffusion:
+        alignment_strategy = 'guided-diffusion'
+    elif args.recurrent_diffusion:
+        alignment_strategy = 'recurrent-diffusion'
+
     if args.policy in ["diffusion", "dp"]:
-        policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
+        policy = DiffusionPolicy.from_pretrained(pretrained_policy_path, alignment_strategy=alignment_strategy)
         policy.config.noise_scheduler_type = "DDIM"
         policy.diffusion.num_inference_steps = 10
         policy.config.n_action_steps = policy.config.horizon - policy.config.n_obs_steps + 1

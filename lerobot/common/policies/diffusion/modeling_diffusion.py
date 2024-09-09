@@ -39,7 +39,7 @@ from lerobot.common.policies.utils import (
     get_device_from_parameters,
     get_dtype_from_parameters,
 )
-
+import time
 
 class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
     """
@@ -53,6 +53,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         self,
         config: DiffusionConfig | None = None,
         dataset_stats: dict[str, dict[str, Tensor]] | None = None,
+        alignment_strategy: str = 'post-hoc',
     ):
         """
         Args:
@@ -78,7 +79,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         # queues are populated during rollout of the policy, they contain the n latest observations and actions
         self._queues = None
 
-        self.diffusion = DiffusionModel(config)
+        self.diffusion = DiffusionModel(config, alginment_strategy=alignment_strategy)
 
         self.expected_image_keys = [k for k in config.input_shapes if k.startswith("observation.image")]
         self.use_env_state = "observation.environment_state" in config.input_shapes
@@ -92,7 +93,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         return set(self.config.input_shapes)
 
     @torch.no_grad
-    def run_inference(self, observation_batch: dict[str, Tensor], guide: Tensor | None = None) -> Tensor:
+    def run_inference(self, observation_batch: dict[str, Tensor], guide: Tensor | None = None, visualizer=None) -> Tensor:
         observation_batch = self.normalize_inputs(observation_batch)
         if guide is not None:
             guide = self.normalize_targets({"action": guide})["action"]
@@ -100,7 +101,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             observation_batch["observation.images"] = torch.stack(
                 [observation_batch[k] for k in self.expected_image_keys], dim=-4
             )
-        actions = self.diffusion.generate_actions(observation_batch, guide=guide)
+        actions = self.diffusion.generate_actions(observation_batch, guide=guide, visualizer=visualizer, normalizer=self)
         actions = self.unnormalize_outputs({"action": actions})["action"]
         return actions
 
@@ -128,7 +129,7 @@ def _make_noise_scheduler(name: str, **kwargs: dict) -> DDPMScheduler | DDIMSche
 
 
 class DiffusionModel(nn.Module):
-    def __init__(self, config: DiffusionConfig):
+    def __init__(self, config: DiffusionConfig, alginment_strategy: str):
         super().__init__()
         self.config = config
 
@@ -163,9 +164,12 @@ class DiffusionModel(nn.Module):
         else:
             self.num_inference_steps = config.num_inference_steps
 
+        assert alginment_strategy in ['post-hoc', 'guided-diffusion', 'recurrent-diffusion', 'biased-initialization'], 'Invalid alignment strategy: ' + str(alginment_strategy)
+        self.alignment_strategy = alginment_strategy
+
     # ========= inference  ============
     def conditional_sample(
-        self, batch_size: int, global_cond: Tensor | None = None, generator: torch.Generator | None = None, guide: Tensor | None = None
+        self, batch_size: int, global_cond: Tensor | None = None, generator: torch.Generator | None = None, guide: Tensor | None = None, visualizer=None, normalizer=None
     ) -> Tensor:
         device = get_device_from_parameters(self)
         dtype = get_dtype_from_parameters(self)
@@ -177,17 +181,38 @@ class DiffusionModel(nn.Module):
             device=device,
             generator=generator,
         )
-        # if guide is not None:
-        #     indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
-        #     init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
-        #     sample = 0.1*sample + init_sample
+
+        if guide is not None and self.alignment_strategy == 'biased-initialization':
+            indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
+            init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
+            sample = .1 * sample + init_sample
+            # return sample
 
         self.noise_scheduler.set_timesteps(self.num_inference_steps)
 
         MCMC_steps = 1
-        if guide is not None:
-            MCMC_steps = 3
+        if guide is not None and self.alignment_strategy == 'recurrent-diffusion':
+            MCMC_steps = 4
+
+        start_influence_step = self.config.num_train_timesteps
+        if guide is not None and self.alignment_strategy == 'biased-initialization':
+            start_influence_step = 30
+
+        final_influence_step = self.config.num_train_timesteps
+        if self.alignment_strategy in ['guided-diffusion', 'recurrent-diffusion']:
+            final_influence_step = 0
+
         for t in self.noise_scheduler.timesteps:
+            vis_dp_dyn = False
+            if vis_dp_dyn and visualizer is not None and normalizer is not None:
+                sample_viz = normalizer.unnormalize_outputs({"action": sample.clone().detach()})["action"]
+                sample_viz = sample_viz.cpu().numpy()
+                visualizer.update_screen(sample_viz)
+                # time.sleep(0.5)
+
+            if t > start_influence_step:
+                print('SKIPPING TIMESTEP: ', t)
+                continue
             for i in range(MCMC_steps):
                 # Predict model output.
                 model_output = self.unet(
@@ -197,12 +222,13 @@ class DiffusionModel(nn.Module):
                 )
 
                 # add interaction gradient
-                if guide is not None and t > 0: # stop adding noise as it will distract the plan
-
+                if guide is not None and t > final_influence_step:
                     grad = self.guide_gradient(sample, guide)
-                    guide_ratio = 100 # best ratio for mcmc, 20 best ratio for non-mcmc
+                    guide_ratio = 50 # best ratio for mcmc, 20 best ratio for non-mcmc
                     model_output = model_output + guide_ratio * grad
                     # sample = sample - 0.1 * grad
+                else:
+                    print('NOT ADDING INTERACTION GRADIENT AT TIMESTEP: ', t)
 
                 # Compute previous image: x_t -> x_t-1
                 scheduler_output = self.noise_scheduler.step(model_output, t, sample, generator=generator)
@@ -210,12 +236,12 @@ class DiffusionModel(nn.Module):
                 clean_sample = scheduler_output.pred_original_sample
 
                 if i < MCMC_steps - 1:
-                    # print('mcmc step i: ', i, 'at t: ', t)
+                    print('mcmc step i: ', i, 'at t: ', t)
                     std = 1
                     noise = std * torch.randn(clean_sample.shape, device=clean_sample.device)
                     sample = self.noise_scheduler.add_noise(clean_sample, noise, t)
                 else:
-                    # print('final mcmc step at t:', t)
+                    print('final diffusion step at t:', t)
                     sample = prev_sample
 
         return sample
@@ -261,7 +287,7 @@ class DiffusionModel(nn.Module):
         # Concatenate features then flatten to (B, global_cond_dim).
         return torch.cat(global_cond_feats, dim=-1).flatten(start_dim=1)
 
-    def generate_actions(self, batch: dict[str, Tensor], guide: Tensor | None = None) -> Tensor:
+    def generate_actions(self, batch: dict[str, Tensor], guide: Tensor | None = None, visualizer=None, normalizer=None) -> Tensor:
         """
         This function expects `batch` to have:
         {
@@ -279,7 +305,7 @@ class DiffusionModel(nn.Module):
         global_cond = self._prepare_global_conditioning(batch)  # (B, global_cond_dim)
 
         # run sampling
-        actions = self.conditional_sample(batch_size, global_cond=global_cond, guide=guide)
+        actions = self.conditional_sample(batch_size, global_cond=global_cond, guide=guide, visualizer=visualizer, normalizer=normalizer)
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
         start = n_obs_steps - 1
