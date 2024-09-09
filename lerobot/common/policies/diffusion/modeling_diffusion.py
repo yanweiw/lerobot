@@ -203,7 +203,7 @@ class DiffusionModel(nn.Module):
             final_influence_step = 0
 
         for t in self.noise_scheduler.timesteps:
-            vis_dp_dyn = False
+            vis_dp_dyn = True
             if vis_dp_dyn and visualizer is not None and normalizer is not None:
                 sample_viz = normalizer.unnormalize_outputs({"action": sample.clone().detach()})["action"]
                 sample_viz = sample_viz.cpu().numpy()

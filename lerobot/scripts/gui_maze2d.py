@@ -257,12 +257,12 @@ class ConditionalMaze(UnconditionalMaze):
                     guide = np.array([self.gui2xy(point) for point in self.draw_traj])
                 else:
                     guide = None
-                xy_pred = self.infer_target(t, guide, visualizer=self)
+                xy_pred = self.infer_target(t, guide, visualizer=(self if self.keep_drawing else None))
                 scores = None
                 # xy_pred, scores = self.similarity_score(xy_pred, guide)
             
             self.update_screen(xy_pred, scores, (self.keep_drawing or self.drawing))
-            self.clock.tick(30)
+            self.clock.tick(3)
             t += 1 / self.fps
 
         pygame.quit()
