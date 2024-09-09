@@ -14,6 +14,7 @@ from lerobot.common.utils.utils import seeded_context, init_hydra_config
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.datasets.factory import make_dataset
 from scipy.special import softmax
+import time
 
 class MazeEnv:
     def __init__(self):
@@ -218,11 +219,12 @@ class UnconditionalMaze(MazeEnv):
 
 
 class ConditionalMaze(UnconditionalMaze):
-    def __init__(self, policy):
+    def __init__(self, policy, vis_dp_dynamics=False):
         super().__init__(policy)
         self.drawing = False
         self.keep_drawing = False
         self.draw_traj = []
+        self.vis_dp_dynamics = vis_dp_dynamics
 
     def run(self):
         t = 0
@@ -257,12 +259,14 @@ class ConditionalMaze(UnconditionalMaze):
                     guide = np.array([self.gui2xy(point) for point in self.draw_traj])
                 else:
                     guide = None
-                xy_pred = self.infer_target(t, guide, visualizer=(self if self.keep_drawing else None))
+                xy_pred = self.infer_target(t, guide, visualizer=(self if self.vis_dp_dynamics and self.keep_drawing else None))
                 scores = None
                 # xy_pred, scores = self.similarity_score(xy_pred, guide)
             
             self.update_screen(xy_pred, scores, (self.keep_drawing or self.drawing))
-            self.clock.tick(3)
+            if self.vis_dp_dynamics and not self.drawing and self.keep_drawing:
+                time.sleep(1)
+            self.clock.tick(30)
             t += 1 / self.fps
 
         pygame.quit()
@@ -276,7 +280,10 @@ if __name__ == "__main__":
     parser.add_argument('-bi', '--biased-initialization', action='store_true', help="Biased initialization")
     parser.add_argument('-gd', '--guided-diffusion', action='store_true', help="Guided diffusion")
     parser.add_argument('-rd', '--recurrent-diffusion', action='store_true', help="Recurrent diffusion")
+    parser.add_argument('-v', '--vis_dp_dynamics', action='store_true', help="Visualize dynamics in DP")
+
     args = parser.parse_args()
+
 
     # Load policy from the new codebase
     pretrained_policy_path = Path(os.path.join(args.checkpoint, "pretrained_model"))
@@ -309,5 +316,5 @@ if __name__ == "__main__":
     if args.unconditional:
         interactiveMaze = UnconditionalMaze(policy_wrapped)
     else:
-        interactiveMaze = ConditionalMaze(policy_wrapped)
+        interactiveMaze = ConditionalMaze(policy_wrapped, args.vis_dp_dynamics)
     interactiveMaze.run()

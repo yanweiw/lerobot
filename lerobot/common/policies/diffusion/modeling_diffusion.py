@@ -196,19 +196,18 @@ class DiffusionModel(nn.Module):
 
         start_influence_step = self.config.num_train_timesteps
         if guide is not None and self.alignment_strategy == 'biased-initialization':
-            start_influence_step = 30
+            start_influence_step = 50
 
         final_influence_step = self.config.num_train_timesteps
         if self.alignment_strategy in ['guided-diffusion', 'recurrent-diffusion']:
             final_influence_step = 0
 
         for t in self.noise_scheduler.timesteps:
-            vis_dp_dyn = True
-            if vis_dp_dyn and visualizer is not None and normalizer is not None:
+            if visualizer is not None and normalizer is not None:
                 sample_viz = normalizer.unnormalize_outputs({"action": sample.clone().detach()})["action"]
                 sample_viz = sample_viz.cpu().numpy()
                 visualizer.update_screen(sample_viz)
-                # time.sleep(0.5)
+                time.sleep(0.1)
 
             if t > start_influence_step:
                 print('SKIPPING TIMESTEP: ', t)
