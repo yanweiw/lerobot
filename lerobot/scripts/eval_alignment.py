@@ -6,7 +6,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-exp_tag = 'exp00'
+exp_tag = 'exp02'
 exps = {
     'act_np': exp_tag + '_act_ph.json',
     'act_ph': exp_tag + '_act_ph.json',
@@ -132,16 +132,16 @@ def plot_dist_vs_collisions():
             min_dists_l2.append(min_dist_l2)
             avg_dists_l2.append(avg_dist_l2)
             
-            # Calculate dtw distances
-            pred_traj_dtw, dist_dtw = dtw_dist(pred_traj, guide)
-            if 'np' in exp:
-                # randomly choosing one as min
-                rand_idx = np.random.randint(0, len(pred_traj_dtw))
-                min_dist_dtw = dist_dtw[rand_idx]
-            min_dist_dtw = dist_dtw.min()
-            avg_dist_dtw = dist_dtw.mean()
-            min_dists_dtw.append(min_dist_dtw)
-            avg_dists_dtw.append(avg_dist_dtw)
+            # # Calculate dtw distances
+            # pred_traj_dtw, dist_dtw = dtw_dist(pred_traj, guide)
+            # if 'np' in exp:
+            #     # randomly choosing one as min
+            #     rand_idx = np.random.randint(0, len(pred_traj_dtw))
+            #     min_dist_dtw = dist_dtw[rand_idx]
+            # min_dist_dtw = dist_dtw.min()
+            # avg_dist_dtw = dist_dtw.mean()
+            # min_dists_dtw.append(min_dist_dtw)
+            # avg_dists_dtw.append(avg_dist_dtw)
             
             # Calculate collision rates
             collision_rate = np.mean(trial['collisions'])
@@ -213,31 +213,45 @@ def plot_dist_vs_collisions():
     # Use 'dp' and 'act' to control marker shapes
     style_group = [exp.split('_')[0] for exp in exp_dict.keys()]  # 'dp' or 'act' for marker shapes
 
+    # Replace zero values with a small positive number (1e-10) for log scale plotting
+    adjusted_collision_rates = [x if x > 0 else 1e-3 for x in mean_collision_rates]
+    adjusted_min_dists_l2 = [y if y > 0 else 1e-3 for y in mean_min_dists_l2]
+    adjusted_avg_dists_l2 = [y if y > 0 else 1e-3 for y in mean_avg_dists_l2]
+
     # Plot using Seaborn with 'hue' for color and 'style' for different markers
-    sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_min_dists_l2, hue=exps, style=markers,
+    sns.scatterplot(x=adjusted_collision_rates + np.random.normal(0, 0.005, size=len(mean_collision_rates)), y=adjusted_min_dists_l2, hue=exps, style=markers,
                     markers=marker_styles, ax=ax[0, 0], legend='full')
-    sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_avg_dists_l2, hue=exps, style=markers,
+    sns.scatterplot(x=adjusted_collision_rates + np.random.normal(0, 0.005, size=len(mean_collision_rates)), y=adjusted_avg_dists_l2, hue=exps, style=markers,
                     markers=marker_styles, ax=ax[0, 1], legend='full')
+    
+    # for each exp print the mean min dist and collision rate
+    for exp, mean_min_dist, mean_collision_rate in zip(exps, mean_min_dists_l2, mean_collision_rates):
+        print(f'{exp}: Mean Min Dist: {mean_min_dist:.3f}, Mean Collision Rate: {mean_collision_rate:.3f}')
+
 
     # Set log scale for both axes
-    ax[0, 0].set_xscale('log')
-    ax[0, 0].set_yscale('log')
-    ax[0, 1].set_xscale('log')
-    ax[0, 1].set_yscale('log')
+    # ax[0, 0].set_xscale('log')
+    # ax[0, 0].set_yscale('log')
+    # ax[0, 1].set_xscale('log')
+    # ax[0, 1].set_yscale('log')
 
     ax[0, 0].set_title('L2: Mean Min Distance vs Mean Collision Rate')
     ax[0, 0].set_xlabel('Mean Collision Rate')
     ax[0, 0].set_ylabel('Mean Min Distance (L2)')
-    
+    ax[0, 0].set_xlim(-0.01, 0.3)
+    ax[0, 0].set_ylim(50, 300)
+
     ax[0, 1].set_title('L2: Mean Avg Distance vs Mean Collision Rate')
     ax[0, 1].set_xlabel('Mean Collision Rate')
     ax[0, 1].set_ylabel('Mean Avg Distance (L2)')
+    ax[0, 1].set_xlim(-0.01, 0.3)
+    ax[0, 1].set_ylim(50, 300)
 
-    # Plot for DTW distance
-    sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_min_dists_dtw, hue=exps, style=markers,
-                    markers=marker_styles, ax=ax[1, 0], legend='full')
-    sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_avg_dists_dtw, hue=exps, style=markers,
-                    markers=marker_styles, ax=ax[1, 1], legend='full')
+    # # Plot for DTW distance
+    # sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_min_dists_dtw, hue=exps, style=markers,
+    #                 markers=marker_styles, ax=ax[1, 0], legend='full')
+    # sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_avg_dists_dtw, hue=exps, style=markers,
+    #                 markers=marker_styles, ax=ax[1, 1], legend='full')
 
     # Set log scale for both axes
     ax[1, 0].set_xscale('log')

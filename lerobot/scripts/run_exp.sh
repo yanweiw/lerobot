@@ -12,7 +12,7 @@
     # parser.add_argument('-s', '--savepath', type=str, default=None, help="Filename to save the drawing")
     # parser.add_argument('-l', '--loadpath', type=str, default=None, help="Filename to load the drawing")
 
-EXP_FILE="exp00.json"
+EXP_FILE="exp02.json"
 
 echo "Running experiments for $EXP_FILE with ACT and post-hoc alignment"
 echo ""

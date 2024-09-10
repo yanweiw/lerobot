@@ -261,7 +261,7 @@ class ConditionalMaze(UnconditionalMaze):
 
     def run(self):
         if self.savepath is not None:
-            self.savefile = open(savepath, "a+", buffering=1)
+            self.savefile = open(self.savepath, "a+", buffering=1)
             self.trial_idx = 0
 
         while self.running:

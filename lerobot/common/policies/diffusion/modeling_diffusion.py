@@ -227,7 +227,7 @@ class DiffusionModel(nn.Module):
                     if self.alignment_strategy == 'guided-diffusion':
                         guide_ratio = 20 # 20 best ratio for non-mcmc
                     elif self.alignment_strategy == 'recurrent-diffusion':
-                        guide_ratio = 80 # 50 best ratio for mcmc, 
+                        guide_ratio = 60 # 50 best ratio for mcmc, 
                     else:
                         guide_ratio = 0
                     model_output = model_output + guide_ratio * grad
