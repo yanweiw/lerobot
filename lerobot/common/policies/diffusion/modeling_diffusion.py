@@ -185,7 +185,8 @@ class DiffusionModel(nn.Module):
         if guide is not None and self.alignment_strategy == 'biased-initialization':
             indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
             init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
-            sample = 0.5 * sample + init_sample
+            init_noise_std = 1
+            sample = init_noise_std * sample + init_sample
             # return sample
 
         self.noise_scheduler.set_timesteps(self.num_inference_steps)
@@ -224,9 +225,9 @@ class DiffusionModel(nn.Module):
                 if guide is not None and t > final_influence_step:
                     grad = self.guide_gradient(sample, guide)
                     if self.alignment_strategy == 'guided-diffusion':
-                        guide_ratio = 20
+                        guide_ratio = 20 # 20 best ratio for non-mcmc
                     elif self.alignment_strategy == 'recurrent-diffusion':
-                        guide_ratio = 50 # best ratio for mcmc, 20 best ratio for non-mcmc
+                        guide_ratio = 80 # 50 best ratio for mcmc, 
                     else:
                         guide_ratio = 0
                     model_output = model_output + guide_ratio * grad
