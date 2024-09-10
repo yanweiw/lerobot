@@ -124,12 +124,15 @@ class MazeEnv:
             for idx, pred in enumerate(xy_pred):
                 for step_idx in range(len(pred) - 1):
                     color = (time_colors[step_idx, :3] * 255).astype(int)
+                    
+                    whiteness_factor = 0.8 if collisions[idx] else 0.0
+                    color = self.blend_with_white(color, whiteness_factor)
                     if scores is None: # whiteness indicates collision
-                        whiteness_factor = 0.8 if collisions[idx] else 0.0
-                        color = self.blend_with_white(color, whiteness_factor)
-                        circle_size = 10 if collisions[idx] else 5
+                        # whiteness_factor = 0.8 if collisions[idx] else 0.0
+                        # color = self.blend_with_white(color, whiteness_factor)
+                        circle_size = 5 if collisions[idx] else 5
                     else: # whiteness indicates similarity score
-                        color = color//3 + (color//3*2) * scores[idx] + 255//3*2 * (1-scores[idx])
+                        # color = color//3 + (color//3*2) * scores[idx] + 255//3*2 * (1-scores[idx])
                         circle_size = int(3 + 20 * scores[idx])
                     if traj_in_gui_space:
                         start_pos = pred[step_idx]
@@ -173,17 +176,20 @@ class MazeEnv:
         return samples, scores
 
 class UnconditionalMaze(MazeEnv):
-    def __init__(self, policy):
+    def __init__(self, policy, policy_tag=None):
         super().__init__()
         self.mouse_pos = None
         self.agent_in_collision = False
         self.agent_history_xy = []
         self.policy_wrapped = policy
+        self.policy_tag = policy_tag
 
     def infer_target(self, timestamp, guide=None, visualizer=None):
         self.policy_wrapped.reset()
         agent_hist_xy = self.agent_history_xy[-1] # rely on policy wrapper to fill the history
-        agent_hist_xy = np.array(agent_hist_xy).reshape(1, 2).repeat(2, axis=0)
+        agent_hist_xy = np.array(agent_hist_xy).reshape(1, 2)
+        if self.policy_tag == 'dp':
+            agent_hist_xy = agent_hist_xy.repeat(2, axis=0)
 
         obs_batch = {
             "observation.state": einops.repeat(
@@ -199,7 +205,10 @@ class UnconditionalMaze(MazeEnv):
 
         with torch.autocast(device_type="cuda"), seeded_context(0):
             # actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp, guide=guide, visualizer=None).transpose(1, 0, 2).cpu().numpy()
-            actions = policy_wrapped.policy.run_inference(obs_batch, guide=guide, visualizer=visualizer).cpu().numpy() # directly call the policy in order to visualize the intermediate steps
+            if self.policy_tag == 'act':
+                actions = self.policy_wrapped.policy.run_inference(obs_batch).cpu().numpy()
+            else:
+                actions = policy_wrapped.policy.run_inference(obs_batch, guide=guide, visualizer=visualizer).cpu().numpy() # directly call the policy in order to visualize the intermediate steps
         return actions
 
     def update_mouse_pos(self):
@@ -237,8 +246,8 @@ class UnconditionalMaze(MazeEnv):
 
 
 class ConditionalMaze(UnconditionalMaze):
-    def __init__(self, policy, vis_dp_dynamics=False, savepath=None):
-        super().__init__(policy)
+    def __init__(self, policy, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
+        super().__init__(policy, policy_tag=policy_tag)
         self.drawing = False
         self.keep_drawing = False
         self.vis_dp_dynamics = vis_dp_dynamics
@@ -252,6 +261,7 @@ class ConditionalMaze(UnconditionalMaze):
         self.xy_pred = None # numpy array
         self.collisions = None # boolean array
         self.scores = None # numpy array
+        self.alignment_strategy = alignment_strategy
 
     def run(self):
         t = 0
@@ -291,7 +301,10 @@ class ConditionalMaze(UnconditionalMaze):
                     self.guide = None
                 self.xy_pred = self.infer_target(t, self.guide, visualizer=(self if self.vis_dp_dynamics and self.keep_drawing else None))
                 self.scores = None
-                # xy_pred, scores = self.similarity_score(xy_pred, guide)
+                if self.alignment_strategy == 'post-hoc' and self.guide is not None:
+                    xy_pred, scores = self.similarity_score(self.xy_pred, self.guide)
+                    self.xy_pred = xy_pred
+                    self.scores = scores
                 self.collisions = self.check_collision(self.xy_pred)
 
             self.update_screen(self.xy_pred, self.collisions, self.scores, (self.keep_drawing or self.drawing))
@@ -319,8 +332,8 @@ class ConditionalMaze(UnconditionalMaze):
         self.trial_idx += 1
 
 class MazeExp(ConditionalMaze):
-    def __init__(self, trials, policy, vis_dp_dynamics=False, savepath=None, alignment_strategy=None):
-        super().__init__(policy, vis_dp_dynamics, savepath)
+    def __init__(self, trials, policy, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
+        super().__init__(policy, vis_dp_dynamics, savepath, policy_tag=policy_tag)
         assert trials is not None
         self.trials = trials
         self.trial_idx = 0
@@ -352,18 +365,17 @@ class MazeExp(ConditionalMaze):
             else:
                 self.update_agent_pos(self.trials[self.trial_idx]["agent_pos"])
 
-            if self.alignment_strategy == 'post-hoc': # don't redo inference
-                pred_traj = np.array(self.trials[self.trial_idx]["pred_traj"])
-                # xy_pred, scores = self.similarity_score(xy_pred, draw_traj)
-                collisions = np.array(self.trials[self.trial_idx]["collisions"])
-                self.update_screen(pred_traj, collisions, scores=None, keep_drawing=True, traj_in_gui_space=True)
-            else: # redo inference
-                # infer the target based on the guide
-                guide = np.array([self.gui2xy(point) for point in self.draw_traj])
-                pred_traj = self.infer_target(t, guide, visualizer=(self if self.vis_dp_dynamics else None))
-                # xy_pred, scores = self.similarity_score(xy_pred, guide)
-                collisions = self.check_collision(pred_traj)
-                self.update_screen(pred_traj, collisions, scores=None, keep_drawing=True, traj_in_gui_space=False)
+            # infer the target based on the guide
+            guide = np.array([self.gui2xy(point) for point in self.draw_traj])
+            xy_pred = self.infer_target(t, guide, visualizer=(self if self.vis_dp_dynamics else None))
+            if self.alignment_strategy in ['output-perturb', 'post-hoc']:
+                xy_pred, scores = self.similarity_score(xy_pred, guide)
+            else:
+                scores = None
+            collisions = self.check_collision(xy_pred)
+            self.update_screen(xy_pred, collisions, scores=scores, keep_drawing=True, traj_in_gui_space=False)
+            if self.vis_dp_dynamics:
+                time.sleep(1)
 
             # Handle events
             for event in pygame.event.get():
@@ -374,7 +386,7 @@ class MazeExp(ConditionalMaze):
                     if event.key == pygame.K_0 and self.file is not None:
                         self.trial_idx += 1
 
-            self.clock.tick(30)
+            self.clock.tick(10)
             t += 1 / self.fps
 
         pygame.quit()
@@ -427,17 +439,19 @@ if __name__ == "__main__":
         policy.config.noise_scheduler_type = "DDIM"
         policy.diffusion.num_inference_steps = 10
         policy.config.n_action_steps = policy.config.horizon - policy.config.n_obs_steps + 1
+        policy_tag = 'dp'
     elif args.policy in ["act"]:
         policy = ACTPolicy.from_pretrained(pretrained_policy_path)
+        policy_tag = 'act'
 
     policy.cuda()
     policy.eval()
     policy_wrapped = PolicyRolloutWrapper(policy, fps=10)  # fps and other params can be adjusted
 
     if args.unconditional:
-        interactiveMaze = UnconditionalMaze(policy_wrapped)
+        interactiveMaze = UnconditionalMaze(policy_wrapped, policy_tag=policy_tag)
     elif trials is not None:
-        interactiveMaze = MazeExp(trials, policy_wrapped, args.vis_dp_dynamics, args.savepath, alignment_strategy)
+        interactiveMaze = MazeExp(trials, policy_wrapped, args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
     else:
-        interactiveMaze = ConditionalMaze(policy_wrapped, args.vis_dp_dynamics, args.savepath)
+        interactiveMaze = ConditionalMaze(policy_wrapped, args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
     interactiveMaze.run()

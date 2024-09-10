@@ -185,7 +185,7 @@ class DiffusionModel(nn.Module):
         if guide is not None and self.alignment_strategy == 'biased-initialization':
             indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
             init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
-            sample = .1 * sample + init_sample
+            sample = 0.5 * sample + init_sample
             # return sample
 
         self.noise_scheduler.set_timesteps(self.num_inference_steps)
@@ -206,7 +206,7 @@ class DiffusionModel(nn.Module):
             if visualizer is not None and normalizer is not None:
                 sample_viz = normalizer.unnormalize_outputs({"action": sample.clone().detach()})["action"]
                 sample_viz = sample_viz.cpu().numpy()
-                visualizer.update_screen(sample_viz)
+                visualizer.update_screen(sample_viz, keep_drawing=True)
                 time.sleep(0.1)
 
             if t > start_influence_step:
@@ -223,7 +223,12 @@ class DiffusionModel(nn.Module):
                 # add interaction gradient
                 if guide is not None and t > final_influence_step:
                     grad = self.guide_gradient(sample, guide)
-                    guide_ratio = 50 # best ratio for mcmc, 20 best ratio for non-mcmc
+                    if self.alignment_strategy == 'guided-diffusion':
+                        guide_ratio = 20
+                    elif self.alignment_strategy == 'recurrent-diffusion':
+                        guide_ratio = 50 # best ratio for mcmc, 20 best ratio for non-mcmc
+                    else:
+                        guide_ratio = 0
                     model_output = model_output + guide_ratio * grad
                     # sample = sample - 0.1 * grad
                 else:
