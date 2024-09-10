@@ -162,7 +162,7 @@ class MazeEnv:
         indices = np.linspace(0, guide.shape[0]-1, samples.shape[1], dtype=int)
         guide = np.expand_dims(guide[indices], axis=0) # (1, pred_horizon, action_dim)
         guide = np.tile(guide, (samples.shape[0], 1, 1)) # (B, pred_horizon, action_dim)
-        scores = np.linalg.norm(samples[:, 1:] - guide[:, 1:], axis=2).mean(axis=1) # (B,)
+        scores = np.linalg.norm(samples[:, :] - guide[:, :], axis=2, ord=2).mean(axis=1) # (B,)
         scores = 1 - scores / (scores.max() + 1e-6) # normalize
         temperature = 20
         scores = softmax(scores*temperature)
@@ -253,9 +253,6 @@ class ConditionalMaze(UnconditionalMaze):
         self.vis_dp_dynamics = vis_dp_dynamics
         self.savefile = None
         self.savepath = savepath
-        if savepath is not None:
-            self.savefile = open(savepath, "a+", buffering=1)
-            self.trial_idx = 0
         self.draw_traj = [] # gui coordinates
         self.xy_pred = None # numpy array
         self.collisions = None # boolean array
@@ -263,6 +260,10 @@ class ConditionalMaze(UnconditionalMaze):
         self.alignment_strategy = alignment_strategy
 
     def run(self):
+        if self.savepath is not None:
+            self.savefile = open(savepath, "a+", buffering=1)
+            self.trial_idx = 0
+
         while self.running:
             self.update_mouse_pos()
 
@@ -335,7 +336,7 @@ class MazeExp(ConditionalMaze):
         super().__init__(policy, vis_dp_dynamics, savepath, policy_tag=policy_tag)
         # Load saved trails
         assert loadpath is not None
-        with open(args.loadpath, "r+", buffering=1) as file:
+        with open(args.loadpath, "r", buffering=1) as file:
             file.seek(0)
             trials = [json.loads(line) for line in file]
         self.trials = trials
@@ -349,6 +350,10 @@ class MazeExp(ConditionalMaze):
         print(f"Alignment strategy: {alignment_strategy}")
 
     def run(self):
+        if self.savepath is not None:
+            self.savefile = open(savepath, "w+", buffering=1)
+            self.trial_idx = 0
+
         while self.trial_idx < len(self.trials):
             # Load the trial
             self.draw_traj = self.trials[self.trial_idx]["guide"]
