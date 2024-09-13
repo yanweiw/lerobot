@@ -276,21 +276,22 @@ class ConditionalEnv(UnconditionalEnv):
                 self.draw_traj = []
             self.draw_traj.append(np.array([x, y]))
         elif event == cv2.EVENT_MOUSEMOVE:
+            print('mouse move')
             if self.drawing:
                 self.draw_traj.append(np.array([x, y]))
-            else:
-                self.mouse_pos = np.array([x, y])
+            self.mouse_pos = np.array([x, y])
         elif event == cv2.EVENT_LBUTTONUP:
             print('left button up')
             self.drawing = False
             self.keep_drawing = True
         else:
+            print('mouse move')
             self.mouse_pos = np.array([x, y])
 
     def run(self):
         img = self.env.render()  # Initialize img before the loop
         while self.running:
-            print('self.drawing', self.drawing, 'self.keep_drawing', self.keep_drawing)
+            # print('self.drawing', self.drawing, 'self.keep_drawing', self.keep_drawing, 'self.mouse_pos', self.mouse_pos, 'self.action', self.action)
             k = cv2.waitKey(1)
             if k == ord('q'):
                 self.running = False
@@ -301,7 +302,7 @@ class ConditionalEnv(UnconditionalEnv):
             # Check if mouse returns to the agent's location to reset drawing
             if self.keep_drawing:
                 print('self.mouse_pos', self.mouse_pos, 'self.action', self.action, 'norm: ', np.linalg.norm(self.mouse_pos - self.action))
-                if np.linalg.norm(self.mouse_pos - self.action) < 1:
+                if np.linalg.norm(self.mouse_pos - self.action) < 10:
                     self.keep_drawing = False
                     self.draw_traj = []         
 
@@ -328,7 +329,7 @@ class ConditionalEnv(UnconditionalEnv):
                     # 
                     img = self.env.render()  # Update img only when not drawing
                     # Update the environment and display
-                    # self.obs, *_ = self.env.step(self.action)
+                    self.obs, *_ = self.env.step(self.action)
                     self.update_screen(img, window_name, xy_pred, scores=scores, keep_drawing=(self.keep_drawing or self.drawing))
             else:
                 # If drawing, just display the drawing without inference
