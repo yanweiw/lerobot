@@ -92,6 +92,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.ticker import ScalarFormatter
 
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.ticker import ScalarFormatter
+
 def plot_dist_vs_collisions():
     fig, ax = plt.subplots(1, 2, figsize=(12, 4))  # 1x2 grid for the two plots
 
@@ -102,7 +107,7 @@ def plot_dist_vs_collisions():
     std_avg_dists_l2 = []
     mean_collision_rates = []
     std_collision_rates = []
-    exps = []
+    exps_list = []
     alignment_strategies = []
     markers = []
 
@@ -113,8 +118,9 @@ def plot_dist_vs_collisions():
 
         # Gather data for each trial in the current experiment
         for trial in trials:
-            pred_traj = np.array(trial['pred_traj'])
-            guide = np.array(trial['guide'])
+            dist_normalization = 900 # maze size
+            pred_traj = np.array(trial['pred_traj']) / dist_normalization
+            guide = np.array(trial['guide']) / dist_normalization
 
             # Calculate l2 distances
             pred_traj_l2, dist_l2 = l2_dist(pred_traj, guide)
@@ -132,7 +138,7 @@ def plot_dist_vs_collisions():
             collision_rate = np.mean(trial['collisions'])
             collision_rates.append(collision_rate)
 
-        # Extract alignment strategy and policy type from experiment name
+        # Extract alignment strategy from experiment name
         alignment_strategy = get_alignment_strategy(exp)
 
         # Add to lists
@@ -146,18 +152,182 @@ def plot_dist_vs_collisions():
         std_avg_dists_l2.append(np.std(avg_dists_l2))
         mean_collision_rates.append(np.mean(collision_rates))
         std_collision_rates.append(np.std(collision_rates))
-        exps.append(exp)
+        exps_list.append(exp)
 
-    # The rest of your plotting code remains the same...
-    # [Plotting code here...]
+    # Convert to arrays for plotting
+    mean_min_dists_l2 = np.array(mean_min_dists_l2)
+    std_min_dists_l2 = np.array(std_min_dists_l2)
+    mean_avg_dists_l2 = np.array(mean_avg_dists_l2)
+    std_avg_dists_l2 = np.array(std_avg_dists_l2)
+    mean_collision_rates = np.array(mean_collision_rates)
+    std_collision_rates = np.array(std_collision_rates)
+    alignment_strategies = np.array(alignment_strategies)
+    markers = np.array(markers)
 
-    # Print the mean and std of min dist, mean dist, and collision rate for each experiment
+    # Set marker styles and colors
+    marker_styles = {}
+    alignment_color_map = {}
+    color_map = [
+        "#1f77b4", "#ff7f0e", "#2ca02c",
+        "#d62728", "#9467bd", "#8c564b",
+        "#e377c2", "#7f7f7f", "#bcbd22"
+    ]
+    for exp in exp_dict.keys():
+        if 'dp' in exp:
+            marker_styles[exp] = 'o'
+        elif 'act' in exp:
+            marker_styles[exp] = 'D'
+        else:
+            raise ValueError(f'Unknown policy type for experiment {exp}')
+        if 'act_np' in exp:
+            alignment_color_map[exp] = color_map[0]
+        elif 'act_op' in exp:
+            alignment_color_map[exp] = color_map[1]
+        elif 'act_ph' in exp:
+            alignment_color_map[exp] = color_map[3]
+        elif 'dp_np' in exp:
+            alignment_color_map[exp] = color_map[2]
+        elif 'dp_ph' in exp:
+            alignment_color_map[exp] = color_map[4]
+        elif 'dp_op' in exp:
+            alignment_color_map[exp] = color_map[5]
+        elif 'dp_bi' in exp:
+            alignment_color_map[exp] = color_map[6]
+        elif 'dp_gd' in exp:
+            alignment_color_map[exp] = color_map[7]
+        elif 'dp_rd' in exp:
+            alignment_color_map[exp] = color_map[8]
+        else:
+            raise ValueError(f'Unknown alignment strategy for experiment {exp}')
+
+    # Replace zero values with a small positive number for log scale plotting
+    adjusted_collision_rates = [x if x > 0 else 1e-3 for x in mean_collision_rates]
+    adjusted_min_dists_l2 = [y if y > 0 else 1e-3 for y in mean_min_dists_l2]
+    adjusted_avg_dists_l2 = [y if y > 0 else 1e-3 for y in mean_avg_dists_l2]
+
+    # Add a small jitter to the x values and y values to avoid overlapping points
+    np.random.seed(1)
+    adjusted_collision_rates = np.array(adjusted_collision_rates) + np.random.normal(0, 0.002, len(adjusted_collision_rates))
+    adjusted_min_dists_l2 = np.array(adjusted_min_dists_l2) + np.random.normal(0, 0.002, len(adjusted_min_dists_l2))
+    adjusted_avg_dists_l2 = np.array(adjusted_avg_dists_l2) + np.random.normal(0, 0.002, len(adjusted_avg_dists_l2))
+
+    # Plot using Seaborn with increased marker size and specified palette
+    sns.scatterplot(
+        x=adjusted_collision_rates,
+        y=adjusted_min_dists_l2,
+        hue=exps_list,
+        style=markers,
+        markers=marker_styles,
+        palette=alignment_color_map,
+        s=100,
+        ax=ax[0],
+        legend=False
+    )
+    sns.scatterplot(
+        x=adjusted_collision_rates,
+        y=adjusted_avg_dists_l2,
+        hue=exps_list,
+        style=markers,
+        markers=marker_styles,
+        palette=alignment_color_map,
+        s=100,
+        ax=ax[1],
+        legend=False
+    )
+
+    # For each exp, print the mean and std of min dist, mean dist, and collision rate
     print("Mean and Standard Deviation for Each Experiment:")
-    for i, exp in enumerate(exps):
+    for i, exp in enumerate(exps_list):
         print(f"\nExperiment: {exp}")
         print(f"  Min Distance L2: mean = {mean_min_dists_l2[i]:.3f}, std = {std_min_dists_l2[i]:.3f}")
         print(f"  Mean Distance L2: mean = {mean_avg_dists_l2[i]:.3f}, std = {std_avg_dists_l2[i]:.3f}")
         print(f"  Collision Rate: mean = {mean_collision_rates[i]:.3f}, std = {std_collision_rates[i]:.3f}")
+
+    # Set log scale for both axes
+    ax[0].set_xscale('log')
+    ax[0].set_yscale('log')
+    ax[1].set_xscale('log')
+    ax[1].set_yscale('log')
+
+    ax[0].set_title('Min Distance vs Collision Rate')
+    ax[0].set_xlabel('Collision Rate')
+    ax[0].set_ylabel('Min Distance (Normalized L2)')
+    ax[0].set_xlim(-0.01, 0.38)
+    ax[0].set_ylim(0.08, 0.33)
+
+    ax[1].set_title('Mean Distance vs Collision Rate')
+    ax[1].set_xlabel('Collision Rate')
+    ax[1].set_ylabel('Mean Distance (Normalized L2)')
+    ax[1].set_xlim(-0.01, 0.38)
+    ax[1].set_ylim(0.08, 0.33)
+
+    # Annotate each point with experiment labels
+    method_names = {
+        'act_np': 'ACT: No Perturbation',
+        'act_ph': 'ACT: Post-Hoc Ranking',
+        'act_op': 'ACT: State Perturbation',
+        'dp_np': 'DP: No Perturbation',
+        'dp_ph': 'DP: Post-Hoc Ranking',
+        'dp_op': 'DP: State Perturbation',
+        'dp_bi': 'DP: Biased Initialization',
+        'dp_gd': 'DP: Vanilla Diffusion',
+        'dp_rd': 'DP: Stochastic Sampling',
+    }
+    method_offsets = {
+        'act_np': (15, 15),
+        'act_ph': (-20, 0),
+        'act_op': (-5, -15),
+        'dp_np': (15, 0),
+        'dp_ph': (-5, 15),
+        'dp_op': (15, -5),
+        'dp_bi': (15, -15),
+        'dp_gd': (15, 15),
+        'dp_rd': (0, -15),
+    }
+
+    for i, txt in enumerate(exps_list):
+        x = adjusted_collision_rates[i]
+        y = adjusted_min_dists_l2[i]
+        # Determine offset based on position
+        offset_x, offset_y = method_offsets.get(txt, (0, 0))
+        ha = 'left' if x < 0.1 else 'right'
+        ax[0].annotate(
+            method_names.get(txt, txt),
+            (x, y),
+            textcoords="offset points",
+            xytext=(offset_x, offset_y),
+            ha=ha,
+            fontsize=10,
+            color=alignment_color_map.get(txt, 'black')  # Set text color to match marker
+        )
+
+    method_offsets2 = {
+        'act_np': (35, 10),
+        'act_ph': (-15, -5),
+        'act_op': (0, -20),
+        'dp_np': (-10, 10),
+        'dp_ph': (-15, -20),
+        'dp_op': (10, 10),
+        'dp_bi': (15, -10),
+        'dp_gd': (15, 0),
+        'dp_rd': (-5, -20),
+    }
+
+    for i, txt in enumerate(exps_list):
+        x = adjusted_collision_rates[i]
+        y = adjusted_avg_dists_l2[i]
+        # Determine offset based on position
+        offset_x, offset_y = method_offsets2.get(txt, (0, 0))
+        ha = 'left' if x < 0.1 else 'right'
+        ax[1].annotate(
+            method_names.get(txt, txt),
+            (x, y),
+            textcoords="offset points",
+            xytext=(offset_x, offset_y),
+            ha=ha,
+            fontsize=10,
+            color=alignment_color_map.get(txt, 'black')  # Set text color to match marker
+        )
 
     plt.tight_layout()
     plt.show()
