@@ -29,7 +29,6 @@ class PushTEnv:
         #       gui_size[1] #512
         # xy is the same
 
-
         self.gui_size = (512, 512)
         self.SPACE_SIZE = 512
         self.fps = 10
@@ -41,16 +40,17 @@ class PushTEnv:
         self.GRAY = (128, 128, 128)
         self.agent_color = self.RED
 
-        # Initialize Pygame
+        # Initialize environment
         self.env = gym.make(
             "gym_pusht/PushT-v0",
             obs_type="pixels_environment_state_agent_pos",
             visualization_width=self.gui_size[0],
             visualization_height=self.gui_size[1],
-            )       
-        obs, _ = self.env.reset()
-        self.action = obs["agent_pos"]
+        )       
+        self.obs, _ = self.env.reset()
+        self.action = self.obs["agent_pos"]
 
+        # Initialize policies
         self.dp_img = DiffusionPolicy.from_pretrained("lerobot/diffusion_pusht")
         self.dp_img.config.noise_scheduler_type = "DDIM"
         self.dp_img.diffusion.num_inference_steps = 10
@@ -58,17 +58,14 @@ class PushTEnv:
         self.dp_img.cuda()
         self.dp_img.eval()
         self.act = ACTPolicy.from_pretrained("alexandersoare/act_pusht_keypoints")
-        # self.act = ACTPolicy.from_pretrained("alexandersoare/act_nvae_pusht_keypoints")  # no VAE version
         self.act.cuda()
         self.act.eval()
 
-        # Uncomment/comment pairs of policies and window names.
+        # Set policies with window names
         if policy_tag == 'both':
             self.ls_window_names_and_policies = [
                 ("Diffusion Policy (image)", self.dp_img),
-                # ("Diffusion Policy (keypoints)", dp_kp_wrapped),
                 ("Action Chunking Transformer", self.act),
-                # ("VQ-BeT", vqbet_wrapped),
             ]
         elif policy_tag == 'dp':
             self.ls_window_names_and_policies = [
@@ -81,252 +78,179 @@ class PushTEnv:
         else:
             raise ValueError(f"Invalid policy tag: {policy_tag}")
 
-        img = self.env.render()
-        for window_name, _ in self.ls_window_names_and_policies:
-            cv2.imshow(window_name, cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-            cv2.imshow(window_name, cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        cv2.setMouseCallback(self.ls_window_names_and_policies[0][0], self.mouse_callback)
-
-        # pygame.init()
-        # self.screen = pygame.display.set_mode(self.gui_size)
-        # pygame.display.set_caption("Maze")
-        # self.clock = pygame.time.Clock()
-        # self.agent_gui_pos = np.array([0, 0])  # Initialize the position of the red dot
+        # Initialize variables
+        self.mouse_pos = None
+        self.agent_gui_pos = None
+        self.agent_history_xy = []
         self.running = True
 
+        # Set up OpenCV windows
+        for window_name, _ in self.ls_window_names_and_policies:
+            cv2.namedWindow(window_name)
+            cv2.setMouseCallback(window_name, self.mouse_callback)
 
     def mouse_callback(self, event: int, x: int, y: int, flags: int = 0, *_):
-        self.action = np.array([x / self.gui_size[0] * self.SPACE_SIZE, y / self.gui_size[1] * self.SPACE_SIZE])        
+        if event == cv2.EVENT_MOUSEMOVE or event == cv2.EVENT_LBUTTONDOWN:
+            self.mouse_pos = np.array([x, y])
 
-    # def check_collision(self, xy_traj):
-    #     assert xy_traj.shape[2] == 2, "Input must be a 2D array of (x, y) coordinates."
-    #     batch_size, num_steps, _ = xy_traj.shape
-    #     xy_traj = xy_traj.reshape(-1, 2)
-    #     xy_traj = np.clip(xy_traj, [0, 0], [self.maze.shape[0] - 1, self.maze.shape[1] - 1])
-    #     maze_x = np.round(xy_traj[:, 0]).astype(int)
-    #     maze_y = np.round(xy_traj[:, 1]).astype(int)
-    #     collisions = self.maze[maze_x, maze_y]
-    #     collisions = collisions.reshape(batch_size, num_steps)
-    #     return np.any(collisions, axis=1)
-    
-    # def find_first_collision_from_GUI(self, gui_traj):
-    #     assert gui_traj.shape[1] == 2, "Input must be a 2D array"
-    #     xy_traj = np.array([self.gui2xy(point) for point in gui_traj])
-    #     xy_traj = np.clip(xy_traj, [0, 0], [self.maze.shape[0] - 1, self.maze.shape[1] - 1])
-    #     maze_x = np.round(xy_traj[:, 0]).astype(int)
-    #     maze_y = np.round(xy_traj[:, 1]).astype(int)
-    #     collisions = self.maze[maze_x, maze_y]
-    #     # find the first index of many possible collisions
-    #     first_collision_idx = np.argmax(collisions)
-    #     return first_collision_idx
+    def update_mouse_pos(self):
+        # In OpenCV, the mouse position is updated via the mouse_callback
+        pass  # The mouse position is already updated in the callback
 
-    # def blend_with_white(self, color, factor=0.5):
-    #     white = np.array([255, 255, 255])
-    #     blended_color = (1 - factor) * np.array(color) + factor * white
-    #     return blended_color.astype(int)
-
-    # def report_collision_percentage(self, collisions):
-    #     num_trajectories = collisions.shape[0]
-    #     num_collisions = np.sum(collisions)
-    #     collision_percentage = (num_collisions / num_trajectories) * 100
-    #     print(f"{num_collisions}/{num_trajectories} trajectories are in collision ({collision_percentage:.2f}%).")
-    #     return collision_percentage
-
-    # def xy2gui(self, xy):
-    #     xy = xy + self.offset  # Adjust normalization as necessary
-    #     x = xy[0] * self.gui_size[1] / (self.maze.shape[0])
-    #     y = xy[1] * self.gui_size[0] / (self.maze.shape[1])
-    #     return np.array([y, x], dtype=float)
-
-    # def gui2xy(self, gui):
-    #     x = gui[1] / self.gui_size[1] * self.maze.shape[0] - self.offset
-    #     y = gui[0] / self.gui_size[0] * self.maze.shape[1] - self.offset
-    #     return np.array([x, y], dtype=float)
+    def update_agent_pos(self, new_agent_pos, history_len=1):
+        self.agent_gui_pos = np.array(new_agent_pos)
+        self.action = self.agent_gui_pos / self.gui_size[0] * self.SPACE_SIZE
+        self.agent_history_xy.append(self.action)
+        self.agent_history_xy = self.agent_history_xy[-history_len:]
 
     def generate_time_color_map(self, num_steps):
         cmap = plt.get_cmap('rainbow')
         values = np.linspace(0, 1, num_steps)
         colors = cmap(values)
+        # Reverse the color ordering so that later steps are redder
+        colors = colors[::-1]
         return colors
 
-    # def draw_maze_background(self):
-    #     surface = pygame.surfarray.make_surface(255 - np.swapaxes(np.repeat(self.maze[:, :, np.newaxis] * 255, 3, axis=2).astype(np.uint8), 0, 1))
-    #     surface = pygame.transform.scale(surface, self.gui_size)
-    #     self.screen.blit(surface, (0, 0))
+    def similarity_score(self, samples, guide=None):
+        # samples: (B, pred_horizon, action_dim)
+        # guide: (guide_horizon, action_dim)
+        if guide is None:
+            return samples, None
+        assert samples.shape[2] == 2 and guide.shape[1] == 2
+        indices = np.linspace(0, guide.shape[0]-1, samples.shape[1], dtype=int)
+        guide = np.expand_dims(guide[indices], axis=0)  # (1, pred_horizon, action_dim)
+        guide = np.tile(guide, (samples.shape[0], 1, 1))  # (B, pred_horizon, action_dim)
+        scores = np.linalg.norm(samples - guide, axis=2, ord=2).mean(axis=1)  # (B,)
+        scores = 1 - scores / (scores.max() + 1e-6)  # normalize
+        temperature = 20
+        scores = softmax(scores * temperature)
+        # Normalize the score to be between 0 and 1
+        scores = (scores - scores.min()) / (scores.max() - scores.min())
+        # Sort the predictions based on scores
+        sort_idx = np.argsort(scores)
+        samples = samples[sort_idx]
+        scores = scores[sort_idx]  
+        return samples, scores
 
-    # def update_screen(self, xy_pred=None, collisions=None, scores=None, keep_drawing=False, traj_in_gui_space=False):
-    #     self.draw_maze_background()
-    #     if xy_pred is not None:
-    #         time_colors = self.generate_time_color_map(xy_pred.shape[1])
-    #         if collisions is None:
-    #             collisions = self.check_collision(xy_pred)
-    #         # self.report_collision_percentage(collisions)
-    #         for idx, pred in enumerate(xy_pred):
-    #             for step_idx in range(len(pred) - 1):
-    #                 color = (time_colors[step_idx, :3] * 255).astype(int)
-                    
-    #                 whiteness_factor = 0.8 if collisions[idx] else 0.0
-    #                 color = self.blend_with_white(color, whiteness_factor)
-    #                 if scores is None: # whiteness indicates collision
-    #                     # whiteness_factor = 0.8 if collisions[idx] else 0.0
-    #                     # color = self.blend_with_white(color, whiteness_factor)
-    #                     circle_size = 5 if collisions[idx] else 5
-    #                 else: # whiteness indicates similarity score
-    #                     # color = color//3 + (color//3*2) * scores[idx] + 255//3*2 * (1-scores[idx])
-    #                     circle_size = int(3 + 20 * scores[idx])
-    #                 if traj_in_gui_space:
-    #                     start_pos = pred[step_idx]
-    #                     end_pos = pred[step_idx + 1]
-    #                 else:
-    #                     start_pos = self.xy2gui(pred[step_idx])
-    #                     end_pos = self.xy2gui(pred[step_idx + 1])
-    #                 pygame.draw.circle(self.screen, color, start_pos, circle_size)
+    def update_screen(self, img, window_name, xy_pred=None, collisions=None, scores=None, keep_drawing=False, traj_in_gui_space=False):
+        img_ = img.copy()
+        if xy_pred is not None:
+            time_colors = self.generate_time_color_map(xy_pred.shape[1])
+            for idx, pred in enumerate(xy_pred):
+                for step_idx in range(len(pred) - 1):
+                    color_rgba = time_colors[step_idx]
+                    # Convert RGBA to RGB and scale to [0, 255]
+                    color_rgb = (color_rgba[:3] * 255).astype(int)
+                    # Convert RGB to BGR for OpenCV
+                    color_bgr = color_rgb[::-1]
+                    # Ensure color values are standard Python integers
+                    color = tuple(map(int, color_bgr))
+                    if scores is None:
+                        circle_size = 5  # Increased base size from 2 to 5
+                    else:
+                        circle_size = int(5 + 30 * scores[idx])  # Adjusted scaling factor for larger circles
 
-        # pygame.draw.circle(self.screen, self.agent_color, (int(self.agent_gui_pos[0]), int(self.agent_gui_pos[1])), 20)
-        # if keep_drawing: # visualize the human drawing input
-        #     # for point in self.draw_traj:
-        #         # pygame.draw.circle(self.screen, self.GRAY, (int(point[0]), int(point[1])), 5)
-        #     # draw lines
-        #     for i in range(len(self.draw_traj) - 1):
-        #         pygame.draw.line(self.screen, self.GRAY, self.draw_traj[i], self.draw_traj[i + 1], 10)
-
-  
-        # pygame.display.flip()
-
-    # def similarity_score(self, samples, guide=None):
-    #     # samples: (B, pred_horizon, action_dim)
-    #     # guide: (guide_horizon, action_dim)
-    #     if guide is None:
-    #         return samples, None
-    #     assert samples.shape[2] == 2 and guide.shape[1] == 2
-    #     indices = np.linspace(0, guide.shape[0]-1, samples.shape[1], dtype=int)
-    #     guide = np.expand_dims(guide[indices], axis=0) # (1, pred_horizon, action_dim)
-    #     guide = np.tile(guide, (samples.shape[0], 1, 1)) # (B, pred_horizon, action_dim)
-    #     scores = np.linalg.norm(samples[:, :] - guide[:, :], axis=2, ord=2).mean(axis=1) # (B,)
-    #     scores = 1 - scores / (scores.max() + 1e-6) # normalize
-    #     temperature = 20
-    #     scores = softmax(scores*temperature)
-    #     # print('scores:', [f'{score:.3f}' for score in scores])
-    #     # normalize the score to be between 0 and 1
-    #     scores = (scores - scores.min()) / (scores.max() - scores.min())
-    #     # sort the predictions based on scores, from smallest to largest, so that larger scores will be drawn on top
-    #     sort_idx = np.argsort(scores)
-    #     samples = samples[sort_idx]
-    #     scores = scores[sort_idx]  
-    #     return samples, scores
+                    if traj_in_gui_space:
+                        start_pos = pred[step_idx]
+                        end_pos = pred[step_idx + 1]
+                    else:
+                        start_pos = pred[step_idx] / self.SPACE_SIZE * self.gui_size[0]
+                        end_pos = pred[step_idx + 1] / self.SPACE_SIZE * self.gui_size[0]
+                    start_pos = tuple(np.round(start_pos).astype(int))
+                    end_pos = tuple(np.round(end_pos).astype(int))
+                    cv2.circle(
+                        img_,
+                        start_pos,
+                        radius=circle_size,
+                        color=color,
+                        thickness=-1,
+                    )
+        # Draw the agent
+        if self.agent_gui_pos is not None:
+            agent_pos = tuple(np.round(self.agent_gui_pos).astype(int))
+            # Ensure agent color is in BGR format and standard integers
+            agent_color_bgr = self.agent_color
+            agent_color = tuple(map(int, agent_color_bgr))
+            cv2.circle(
+                img_,
+                agent_pos,
+                radius=23,
+                color=agent_color,
+                thickness=-1,
+            )
+        cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
 
 class UnconditionalEnv(PushTEnv):
-    # for dragging the agent around to explore motion manifold
     def __init__(self, policy_tag=None):
         super().__init__(policy_tag=policy_tag)
-        # self.mouse_pos = None
-        # self.agent_in_collision = False
-        # self.agent_history_xy = []
+        self.clock = pygame.time.Clock()  # For consistent fps
 
-    def infer_target(self, policy, obs, policy_tag, guide=None, visualizer=None, noise_std=0):
-
+    def infer_target(self, policy, policy_tag, guide=None, visualizer=None):
+        # Use policy and policy_tag passed as parameters
         obs_batch = {
             "observation.state": einops.repeat(
                 torch.from_numpy(self.action).float().cuda(), "d -> b d", b=self.batch_size
             )
         }
         if policy_tag == 'dp': 
-            # create a temporal dimension after batch and before the state dimension
+            # Create a temporal dimension after batch and before the state dimension
             obs_batch["observation.state"] = einops.repeat(obs_batch["observation.state"], "b ... -> b t ...", t=2)
-        with seeded_context(0):
-            obs_batch["observation.state"] = (
-                obs_batch["observation.state"] + torch.randn_like(obs_batch["observation.state"]) * noise_std
-            )
-        if "pixels" in obs:
+        if "pixels" in self.obs:
             obs_batch["observation.image"] = einops.repeat(
-                torch.from_numpy(obs["pixels"]).float().cuda().permute(2, 0, 1), "... -> b ...", b=self.batch_size
+                torch.from_numpy(self.obs["pixels"]).float().cuda().permute(2, 0, 1), "... -> b ...", b=self.batch_size
             )
             if policy_tag == 'dp': 
-                # create a temporal dimension after batch and before the state dimension
+                # Create a temporal dimension after batch and before the state dimension
                 obs_batch["observation.image"] = einops.repeat(obs_batch["observation.image"], "b ... -> b t ...", t=2)
-        if "environment_state" in obs:
+        if "environment_state" in self.obs:
             obs_batch["observation.environment_state"] = einops.repeat(
-                torch.from_numpy(obs["environment_state"]).float().cuda(), "d -> b d", b=self.batch_size
+                torch.from_numpy(self.obs["environment_state"]).float().cuda(), "d -> b d", b=self.batch_size
             )
             if policy_tag == 'dp':
-                # create a temporal dimension after batch and before the state dimension
-                obs_batch["observation.environment_state"] = einops.repeat(obs_batch["observation.environment_state"], "b ... -> b t ...", t=2)
-            with seeded_context(0):
-                obs_batch["observation.environment_state"] = (
-                    obs_batch["observation.environment_state"]
-                    + torch.randn_like(obs_batch["observation.environment_state"]) * noise_std
+                # Create a temporal dimension after batch and before the state dimension
+                obs_batch["observation.environment_state"] = einops.repeat(
+                    obs_batch["observation.environment_state"], "b ... -> b t ...", t=2
                 )
-        
+    
         if guide is not None:
             guide = torch.from_numpy(guide).float().cuda()
 
         with torch.autocast(device_type="cuda"), seeded_context(0):
-            # actions = self.policy_wrapped.provide_observation_get_actions(obs_batch, timestamp, timestamp, guide=guide, visualizer=None).transpose(1, 0, 2).cpu().numpy()
             if policy_tag == 'act':
                 actions = policy.run_inference(obs_batch).cpu().numpy()
             elif policy_tag == 'dp':
-                actions = policy.run_inference(obs_batch, guide=guide, visualizer=visualizer).cpu().numpy() # directly call the policy in order to visualize the intermediate steps
+                actions = policy.run_inference(obs_batch, guide=guide, visualizer=visualizer).cpu().numpy()
             else:
                 raise ValueError(f"Invalid policy tag: {policy_tag}")
         return actions
 
-    # def update_mouse_pos(self):
-    #     self.mouse_pos = np.array(pygame.mouse.get_pos())
-
-    # def update_agent_pos(self, new_agent_pos, history_len=1):
-    #     self.agent_gui_pos = np.array(new_agent_pos)
-    #     agent_xy_pos = self.gui2xy(self.agent_gui_pos)
-    #     self.agent_in_collision = self.check_collision(agent_xy_pos.reshape(1, 1, 2))[0]
-    #     if self.agent_in_collision:
-    #         self.agent_color = self.blend_with_white(self.RED, 0.8)
-    #     else:
-    #         self.agent_color = self.RED        
-    #     self.agent_history_xy.append(agent_xy_pos)
-    #     self.agent_history_xy = self.agent_history_xy[-history_len:]
-
     def run(self):
-        obs, _ = self.env.reset()
+        self.obs, _ = self.env.reset()
         while self.running:
             k = cv2.waitKey(1)
             if k == ord("q"):
                 self.running = False
                 break
+            self.update_mouse_pos()
+            if self.mouse_pos is not None:
+                self.update_agent_pos(self.mouse_pos.copy())
             img = self.env.render()
+            # For each policy, infer and plot predictions
             for window_name, policy in self.ls_window_names_and_policies:
-                img_ = img.copy()
-                if 'Diffusion' in window_name:
-                    policy_tag = 'dp'
-                elif 'Action' in window_name:
-                    policy_tag = 'act'
-                else:
-                    raise ValueError(f"Invalid window name: {window_name}")
-                policy_batch_actions = self.infer_target(policy, obs, policy_tag, guide=None, visualizer=None)
-                obs, *_ = self.env.step(self.action)
-
-                for b in range(policy_batch_actions.shape[0]):
-                    policy_actions = policy_batch_actions[b] / 512 * img_.shape[:2]
-                    policy_actions = np.round(policy_actions).astype(int)
-                    for k, policy_action in enumerate(policy_actions[::-1]):
-                        cv2.circle(
-                            img_,
-                            tuple(policy_action),
-                            radius=2,
-                            color=(
-                                int(255 * k / len(policy_actions)),
-                                0,
-                                int(255 * (len(policy_actions) - k) / len(policy_actions)),
-                            ),
-                            thickness=1,
-                        )
-                cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
+                # Determine the policy tag based on the window name
+                policy_tag = 'dp' if 'Diffusion' in window_name else 'act'
+                # Create a copy of the image for each policy
+                xy_pred = self.infer_target(policy, policy_tag)
+                self.obs, *_ = self.env.step(self.action)
+                self.update_screen(img, window_name, xy_pred)
+            self.clock.tick(self.fps)
 
 
 
-
-# class ConditionalMaze(UnconditionalMaze):
+# class ConditionalEnv(UnconditionalEnv):
 #     # for interactive guidance dataset collection
-#     def __init__(self, policy, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
-#         super().__init__(policy, policy_tag=policy_tag)
+#     def __init__(self, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
+#         super().__init__(policy_tag=policy_tag)
 #         self.drawing = False
 #         self.keep_drawing = False
 #         self.vis_dp_dynamics = vis_dp_dynamics
@@ -538,15 +462,6 @@ if __name__ == "__main__":
     elif args.recurrent_diffusion:
         alignment_strategy = 'recurrent-diffusion'
 
-    # if args.policy in ["diffusion", "dp"]:
-    #     checkpoint_path = '/mnt/data/maze2d_dp/outputs/2024.08.27/22.43.32_maze2d_diffusion/checkpoints/100000/'
-    # elif args.policy in ["act"]:
-    #     checkpoint_path = '/mnt/data/maze2d_act/outputs/2024.08.28/01.54.30_maze2d_act/checkpoints/100000/'
-
-    # if args.policy is not None:
-    #     # Load policy from the new codebase
-    #     pretrained_policy_path = Path(os.path.join(checkpoint_path, "pretrained_model"))
-
     if args.policy in ["diffusion", "dp"]:
         policy_tag = 'dp'
     elif args.policy in ["act"]:
@@ -554,9 +469,6 @@ if __name__ == "__main__":
     else:
         policy_tag = 'both'
         
-
-    # policy_wrapped = PolicyRolloutWrapper(policy, fps=10)  # fps and other params can be adjusted
-
     if args.unconditional:
         interactiveEnv = UnconditionalEnv(policy_tag=policy_tag)
     # elif args.loadpath is not None:
