@@ -230,22 +230,25 @@ def plot_dist_vs_collisions():
 
 
     # Set log scale for both axes
-    # ax[0, 0].set_xscale('log')
-    # ax[0, 0].set_yscale('log')
-    # ax[0, 1].set_xscale('log')
-    # ax[0, 1].set_yscale('log')
+    ax[0, 0].set_xscale('log')
+    ax[0, 0].set_yscale('log')
+    ax[0, 1].set_xscale('log')
+    ax[0, 1].set_yscale('log')
 
     ax[0, 0].set_title('L2: Mean Min Distance vs Mean Collision Rate')
     ax[0, 0].set_xlabel('Mean Collision Rate')
     ax[0, 0].set_ylabel('Mean Min Distance (L2)')
-    ax[0, 0].set_xlim(-0.01, 0.3)
+    ax[0, 0].set_xlim(-0.01, 0.38)
     ax[0, 0].set_ylim(50, 300)
+    ax[0, 0].legend(loc='lower right')
+
 
     ax[0, 1].set_title('L2: Mean Avg Distance vs Mean Collision Rate')
     ax[0, 1].set_xlabel('Mean Collision Rate')
     ax[0, 1].set_ylabel('Mean Avg Distance (L2)')
-    ax[0, 1].set_xlim(-0.01, 0.3)
+    ax[0, 1].set_xlim(-0.01, 0.38)
     ax[0, 1].set_ylim(50, 300)
+    ax[0, 1].legend(loc='lower right')
 
     # # Plot for DTW distance
     # sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_min_dists_dtw, hue=exps, style=markers,
@@ -259,21 +262,17 @@ def plot_dist_vs_collisions():
     ax[1, 1].set_xscale('log')
     ax[1, 1].set_yscale('log')
 
-    ax[1, 0].set_title('DTW: Mean Min Distance vs Mean Collision Rate')
-    ax[1, 0].set_xlabel('Mean Collision Rate')
-    ax[1, 0].set_ylabel('Mean Min Distance (DTW)')
+    # ax[1, 0].set_title('DTW: Mean Min Distance vs Mean Collision Rate')
+    # ax[1, 0].set_xlabel('Mean Collision Rate')
+    # ax[1, 0].set_ylabel('Mean Min Distance (DTW)')
     
-    ax[1, 1].set_title('DTW: Mean Avg Distance vs Mean Collision Rate')
-    ax[1, 1].set_xlabel('Mean Collision Rate')
-    ax[1, 1].set_ylabel('Mean Avg Distance (DTW)')
+    # ax[1, 1].set_title('DTW: Mean Avg Distance vs Mean Collision Rate')
+    # ax[1, 1].set_xlabel('Mean Collision Rate')
+    # ax[1, 1].set_ylabel('Mean Avg Distance (DTW)')
 
-    plt.legend(title='Alignment Strategy and Marker')
+    # plt.legend(title='Alignment Strategy and Marker')
     plt.tight_layout()
     plt.show()
-
-
-
-
 
 if __name__ == '__main__':
     plot_dist_vs_collisions()

@@ -1,18 +1,6 @@
 #!/bin/bash
 
-    # parser.add_argument('-c', "--checkpoint", type=str, help="Path to the checkpoint")
-    # parser.add_argument('-p', '--policy', default=None, type=str, help="Policy name")
-    # parser.add_argument('-u', '--unconditional', action='store_true', help="Unconditional Maze")
-    # parser.add_argument('-op', '--output-perturb', action='store_true', help="Output perturbation")
-    # parser.add_argument('-ph', '--post-hoc', action='store_true', help="Post-hoc alignment")
-    # parser.add_argument('-bi', '--biased-initialization', action='store_true', help="Biased initialization")
-    # parser.add_argument('-gd', '--guided-diffusion', action='store_true', help="Guided diffusion")
-    # parser.add_argument('-rd', '--recurrent-diffusion', action='store_true', help="Recurrent diffusion")
-    # parser.add_argument('-v', '--vis_dp_dynamics', action='store_true', help="Visualize dynamics in DP")
-    # parser.add_argument('-s', '--savepath', type=str, default=None, help="Filename to save the drawing")
-    # parser.add_argument('-l', '--loadpath', type=str, default=None, help="Filename to load the drawing")
-
-EXP_FILE="exp02.json"
+EXP_FILE="exp01.json"
 
 echo "Running experiments for $EXP_FILE with ACT and post-hoc alignment"
 echo ""

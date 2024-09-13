@@ -185,7 +185,7 @@ class DiffusionModel(nn.Module):
         if guide is not None and self.alignment_strategy == 'biased-initialization':
             indices = torch.linspace(0, guide.shape[0]-1, sample.shape[1], dtype=int)
             init_sample = torch.unsqueeze(guide[indices], dim=0) # (1, pred_horizon, action_dim)
-            init_noise_std = 1
+            init_noise_std = 0.5
             sample = init_noise_std * sample + init_sample
             # return sample
 

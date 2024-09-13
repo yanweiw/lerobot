@@ -339,6 +339,10 @@ class MazeExp(ConditionalMaze):
         with open(args.loadpath, "r", buffering=1) as file:
             file.seek(0)
             trials = [json.loads(line) for line in file]
+            # set random seed and shuffle the trials
+            np.random.seed(0)
+            np.random.shuffle(trials)
+
         self.trials = trials
         self.trial_idx = 0
         # if savepath is not None:
@@ -405,7 +409,11 @@ class MazeExp(ConditionalMaze):
             else:
                 collisions = self.trials[self.trial_idx]["collisions"]
                 pred_traj = np.array(self.trials[self.trial_idx]["pred_traj"])
-                self.update_screen(pred_traj, collisions, keep_drawing=True, traj_in_gui_space=True)
+                if self.alignment_strategy in ['output-perturb', 'post-hoc']:
+                    _, scores = self.similarity_score(pred_traj, np.array(self.trials[self.trial_idx]["guide"])) # this is a hack as both pred_traj and guide are in gui space, don't use this score for absolute statistics calculation
+                else:
+                    scores = None
+                self.update_screen(pred_traj, collisions, scores=scores, keep_drawing=True, traj_in_gui_space=True)
 
             # Handle events
             for event in pygame.event.get():
