@@ -87,6 +87,11 @@ def dtw_dist(samples, guide):
     samples = samples[sort_idx]
     return samples, dist
 
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.ticker import ScalarFormatter
+
 def plot_dist_vs_collisions():
     fig, ax = plt.subplots(1, 2, figsize=(12, 4))  # 1x2 grid for the two plots
     
@@ -147,6 +152,11 @@ def plot_dist_vs_collisions():
     # Set marker styles and colors
     marker_styles = {}
     alignment_color_map = {}
+    color_map = [
+    "#1f77b4", "#ff7f0e", "#2ca02c",
+    "#d62728", "#9467bd", "#8c564b",
+    "#e377c2", "#7f7f7f", "#bcbd22"
+    ]
     for exp in exp_dict.keys():
         if 'dp' in exp:
             marker_styles[exp] = 'o'
@@ -154,32 +164,38 @@ def plot_dist_vs_collisions():
             marker_styles[exp] = 'D'
         else:
             raise ValueError(f'Unknown policy type for experiment {exp}')
-        if 'np' in exp:
-            alignment_color_map[exp] = 'blue'
-        elif 'op' in exp:
-            alignment_color_map[exp] = 'green'
-        elif 'ph' in exp:
-            alignment_color_map[exp] = 'red'
-        elif 'bi' in exp:
-            alignment_color_map[exp] = 'purple'
-        elif 'rd' in exp:
-            alignment_color_map[exp] = 'orange'
-        elif 'gd' in exp:
-            alignment_color_map[exp] = 'cyan'
+        if 'act_np' in exp:
+            alignment_color_map[exp] = color_map[0]
+        elif 'act_op' in exp:
+            alignment_color_map[exp] = color_map[1]
+        elif 'act_ph' in exp:
+            alignment_color_map[exp] = color_map[3]
+        elif 'dp_np' in exp:
+            alignment_color_map[exp] = color_map[2]
+        elif 'dp_ph' in exp:
+            alignment_color_map[exp] = color_map[4]
+        elif 'dp_op' in exp:
+            alignment_color_map[exp] = color_map[5]
+        elif 'dp_bi' in exp:
+            alignment_color_map[exp] = color_map[6]
+        elif 'dp_gd' in exp:
+            alignment_color_map[exp] = color_map[7]
+        elif 'dp_rd' in exp:
+            alignment_color_map[exp] = color_map[8]
         else:
             raise ValueError(f'Unknown alignment strategy for experiment {exp}')
 
     # Replace zero values with a small positive number for log scale plotting
     dist_normalization = 900
     adjusted_collision_rates = [x if x > 0 else 1e-3 for x in mean_collision_rates] 
-    adjusted_min_dists_l2 = [y / dist_normalization for y in mean_min_dists_l2] 
-    adjusted_avg_dists_l2 = [y / dist_normalization for y in mean_avg_dists_l2] 
+    adjusted_min_dists_l2 = [y / dist_normalization if y / dist_normalization > 0 else 1e-3 for y in mean_min_dists_l2] 
+    adjusted_avg_dists_l2 = [y / dist_normalization if y / dist_normalization > 0 else 1e-3 for y in mean_avg_dists_l2] 
 
     # Add a small jitter to the x values and y values to avoid overlapping points
     np.random.seed(1)
-    adjusted_collision_rates += np.random.normal(0, 0.001, len(adjusted_collision_rates))
-    adjusted_min_dists_l2 += np.random.normal(0, 0.001, len(adjusted_min_dists_l2))
-    adjusted_avg_dists_l2 += np.random.normal(0, 0.001, len(adjusted_avg_dists_l2))
+    adjusted_collision_rates = np.array(adjusted_collision_rates) + np.random.normal(0, 0.002, len(adjusted_collision_rates))
+    adjusted_min_dists_l2 = np.array(adjusted_min_dists_l2) + np.random.normal(0, 0.002, len(adjusted_min_dists_l2))
+    adjusted_avg_dists_l2 = np.array(adjusted_avg_dists_l2) + np.random.normal(0, 0.002, len(adjusted_avg_dists_l2))
 
     # Plot using Seaborn with increased marker size and specified palette
     sns.scatterplot(
@@ -244,8 +260,8 @@ def plot_dist_vs_collisions():
         'act_ph': (-20, 0),
         'act_op': (-5, -15),
         'dp_np': (15, 0),
-        'dp_ph': (5, 15),
-        'dp_op': (15, 0),
+        'dp_ph': (-5, 15),
+        'dp_op': (15, -5),
         'dp_bi': (15, -15),
         'dp_gd': (15, 15),
         'dp_rd': (0, -15),
@@ -255,16 +271,16 @@ def plot_dist_vs_collisions():
         x = adjusted_collision_rates[i]
         y = adjusted_min_dists_l2[i]
         # Determine offset based on position
-        offset_x, offset_y = method_offsets[txt]
+        offset_x, offset_y = method_offsets.get(txt, (0, 0))
         ha = 'left' if x < 0.1 else 'right'
         ax[0].annotate(
-            method_names[txt],
+            method_names.get(txt, txt),
             (x, y), 
             textcoords="offset points", 
             xytext=(offset_x, offset_y), 
             ha=ha, 
             fontsize=10,
-            color=alignment_color_map[txt]  # Set text color to match marker
+            color=alignment_color_map.get(txt, 'black')  # Set text color to match marker
         )
     
     method_offsets2 = {
@@ -272,7 +288,7 @@ def plot_dist_vs_collisions():
         'act_ph': (-15, -5),
         'act_op': (0, -20),
         'dp_np': (-10, 10),
-        'dp_ph': (-5, -15),
+        'dp_ph': (-15, -20),
         'dp_op': (10, 10),
         'dp_bi': (15, -10),
         'dp_gd': (15, 0),
@@ -283,16 +299,16 @@ def plot_dist_vs_collisions():
         x = adjusted_collision_rates[i]
         y = adjusted_avg_dists_l2[i]
         # Determine offset based on position
-        offset_x, offset_y = method_offsets2[txt]
+        offset_x, offset_y = method_offsets2.get(txt, (0, 0))
         ha = 'left' if x < 0.1 else 'right'
         ax[1].annotate(
-            method_names[txt],
+            method_names.get(txt, txt),
             (x, y), 
             textcoords="offset points", 
             xytext=(offset_x, offset_y), 
             ha=ha, 
             fontsize=10,
-            color=alignment_color_map[txt]  # Set text color to match marker
+            color=alignment_color_map.get(txt, 'black')  # Set text color to match marker
         )
 
     plt.tight_layout()
