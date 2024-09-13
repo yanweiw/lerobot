@@ -175,21 +175,20 @@ def plot_dist_vs_collisions():
     adjusted_min_dists_l2 = [y / dist_normalization for y in mean_min_dists_l2] 
     adjusted_avg_dists_l2 = [y / dist_normalization for y in mean_avg_dists_l2] 
 
-    # add a small jitter to the x values and y values to avoid overlapping points
+    # Add a small jitter to the x values and y values to avoid overlapping points
     np.random.seed(1)
     adjusted_collision_rates += np.random.normal(0, 0.001, len(adjusted_collision_rates))
     adjusted_min_dists_l2 += np.random.normal(0, 0.001, len(adjusted_min_dists_l2))
     adjusted_avg_dists_l2 += np.random.normal(0, 0.001, len(adjusted_avg_dists_l2))
 
-
-    # Plot using Seaborn with increased marker size
-
+    # Plot using Seaborn with increased marker size and specified palette
     sns.scatterplot(
         x=adjusted_collision_rates,  
         y=adjusted_min_dists_l2, 
         hue=exps, 
         style=markers, 
-        markers=marker_styles, 
+        markers=marker_styles,
+        palette=alignment_color_map,  # Added palette parameter
         s=100,  # Increased marker size
         ax=ax[0], 
         legend=False  # Removed legend
@@ -199,7 +198,8 @@ def plot_dist_vs_collisions():
         y=adjusted_avg_dists_l2, 
         hue=exps, 
         style=markers, 
-        markers=marker_styles, 
+        markers=marker_styles,
+        palette=alignment_color_map,  # Added palette parameter
         s=100,  # Increased marker size
         ax=ax[1], 
         legend=False  # Removed legend
@@ -220,16 +220,12 @@ def plot_dist_vs_collisions():
     ax[0].set_ylabel('Min Distance (Normalized L2)')
     ax[0].set_xlim(-0.01, 0.38)
     ax[0].set_ylim(0.08, 0.33)
-    # Removed legend
-    # ax[0].legend(loc='lower right')
 
     ax[1].set_title('Mean Distance vs Collision Rate')
     ax[1].set_xlabel('Collision Rate')
     ax[1].set_ylabel('Mean Distance (Normalized L2)')
     ax[1].set_xlim(-0.01, 0.38)
     ax[1].set_ylim(0.08, 0.33)
-    # Removed legend
-    # ax[1].legend(loc='lower right')
 
     # Annotate each point with experiment labels
     method_names = {
@@ -267,7 +263,8 @@ def plot_dist_vs_collisions():
             textcoords="offset points", 
             xytext=(offset_x, offset_y), 
             ha=ha, 
-            fontsize=10  # Increased font size
+            fontsize=10,
+            color=alignment_color_map[txt]  # Set text color to match marker
         )
     
     method_offsets2 = {
@@ -294,7 +291,8 @@ def plot_dist_vs_collisions():
             textcoords="offset points", 
             xytext=(offset_x, offset_y), 
             ha=ha, 
-            fontsize=10  # Increased font size
+            fontsize=10,
+            color=alignment_color_map[txt]  # Set text color to match marker
         )
 
     plt.tight_layout()
