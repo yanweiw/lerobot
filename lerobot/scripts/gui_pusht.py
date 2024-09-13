@@ -261,8 +261,8 @@ class ConditionalEnv(UnconditionalEnv):
         self.savefile = None
         self.savepath = savepath
         self.draw_traj = []  # GUI coordinates
-        self.xy_pred = None  # numpy array
-        self.scores = None  # numpy array
+        self.xy_pred = {}  # numpy array
+        self.scores = {}  # numpy array
         self.alignment_strategy = alignment_strategy
         if self.savepath is not None:
             self.savefile = open(self.savepath, "a+", buffering=1)
@@ -323,9 +323,9 @@ class ConditionalEnv(UnconditionalEnv):
                     scores = None
                     if self.alignment_strategy == 'post-hoc' and guide is not None:
                         xy_pred, scores = self.similarity_score(xy_pred, guide)
-                        # Store predictions
-                    # self.xy_pred = xy_pred
-                    # self.scores = scores
+                    # Store predictions
+                    self.xy_pred[policy_tag] = xy_pred
+                    self.scores[policy_tag] = scores
                     # 
                     img = self.env.render()  # Update img only when not drawing
                     # Update the environment and display
@@ -335,6 +335,8 @@ class ConditionalEnv(UnconditionalEnv):
                 # If drawing, just display the drawing without inference
                 for window_name, _ in self.ls_window_names_and_policies:
                     img_ = img.copy()  # Use the last rendered image
+                    policy_tag = 'dp' if 'Diffusion' in window_name else 'act'
+                    self.update_screen(img_, window_name, self.xy_pred[policy_tag], scores=self.scores[policy_tag], keep_drawing=(self.keep_drawing or self.drawing))
                     # Draw the agent
                     if self.action is not None:
                         agent_pos = tuple(np.round(self.action).astype(int))
@@ -358,9 +360,10 @@ class ConditionalEnv(UnconditionalEnv):
             self.clock.tick(self.fps)
 
     def save_trials(self):
-        if self.xy_pred is not None:
-            b, t, _ = self.xy_pred.shape
-            xy_pred = self.xy_pred.reshape(b * t, 2)
+        if not self.xy_pred: # empty dict evaluates to False
+            xy_pred = self.xy_pred[self.policy_tag]
+            b, t, _ = xy_pred.shape
+            xy_pred = xy_pred.reshape(b * t, 2)
             pred_gui_traj = xy_pred / self.SPACE_SIZE * self.gui_size[0]
             pred_gui_traj = pred_gui_traj.reshape(b, t, 2)
             entry = {
