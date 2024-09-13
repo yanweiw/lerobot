@@ -80,8 +80,8 @@ class PushTEnv:
 
         # Initialize variables
         self.mouse_pos = None
-        self.agent_gui_pos = None
-        self.agent_history_xy = []
+        # self.agent_gui_pos = None
+        # self.agent_history_xy = []
         self.running = True
 
         # Set up OpenCV windows
@@ -93,15 +93,19 @@ class PushTEnv:
         if event == cv2.EVENT_MOUSEMOVE or event == cv2.EVENT_LBUTTONDOWN:
             self.mouse_pos = np.array([x, y])
 
-    def update_mouse_pos(self):
+    # def update_mouse_pos(self):
         # In OpenCV, the mouse position is updated via the mouse_callback
-        pass  # The mouse position is already updated in the callback
+        # pass  # The mouse position is already updated in the callback
 
-    def update_agent_pos(self, new_agent_pos, history_len=1):
-        self.agent_gui_pos = np.array(new_agent_pos)
-        self.action = self.agent_gui_pos / self.gui_size[0] * self.SPACE_SIZE
-        self.agent_history_xy.append(self.action)
-        self.agent_history_xy = self.agent_history_xy[-history_len:]
+    def update_agent_pos(self, history_len=1):
+        # self.agent_gui_pos = np.array(new_agent_pos)
+        # self.action = self.agent_gui_pos / self.gui_size[0] * self.SPACE_SIZE
+        # self.agent_history_xy.append(self.action)
+        # self.agent_history_xy = self.agent_history_xy[-history_len:]
+
+        # self.obs, *_ = self.env.step(self.action)
+        # from IPython import embed; embed()
+        self.action = self.mouse_pos / self.gui_size[0] * self.SPACE_SIZE
 
     def generate_time_color_map(self, num_steps):
         cmap = plt.get_cmap('rainbow')
@@ -166,8 +170,8 @@ class PushTEnv:
                         thickness=-1,
                     )
         # Draw the agent
-        if self.agent_gui_pos is not None:
-            agent_pos = tuple(np.round(self.agent_gui_pos).astype(int))
+        if self.action is not None:
+            agent_pos = tuple(np.round(self.action).astype(int))
             # Ensure agent color is in BGR format and standard integers
             agent_color_bgr = self.agent_color
             agent_color = tuple(map(int, agent_color_bgr))
@@ -231,9 +235,9 @@ class UnconditionalEnv(PushTEnv):
             if k == ord("q"):
                 self.running = False
                 break
-            self.update_mouse_pos()
+            # self.update_mouse_pos()
             if self.mouse_pos is not None:
-                self.update_agent_pos(self.mouse_pos.copy())
+                self.update_agent_pos()
             img = self.env.render()
             # For each policy, infer and plot predictions
             for window_name, policy in self.ls_window_names_and_policies:
@@ -247,91 +251,127 @@ class UnconditionalEnv(PushTEnv):
 
 
 
-# class ConditionalEnv(UnconditionalEnv):
-#     # for interactive guidance dataset collection
-#     def __init__(self, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
-#         super().__init__(policy_tag=policy_tag)
-#         self.drawing = False
-#         self.keep_drawing = False
-#         self.vis_dp_dynamics = vis_dp_dynamics
-#         self.savefile = None
-#         self.savepath = savepath
-#         self.draw_traj = [] # gui coordinates
-#         self.xy_pred = None # numpy array
-#         self.collisions = None # boolean array
-#         self.scores = None # numpy array
-#         self.alignment_strategy = alignment_strategy
+class ConditionalEnv(UnconditionalEnv):
+    # For interactive guidance dataset collection
+    def __init__(self, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
+        super().__init__(policy_tag=policy_tag)
+        self.drawing = False
+        self.keep_drawing = False
+        self.vis_dp_dynamics = vis_dp_dynamics
+        self.savefile = None
+        self.savepath = savepath
+        self.draw_traj = []  # GUI coordinates
+        self.xy_pred = None  # numpy array
+        self.scores = None  # numpy array
+        self.alignment_strategy = alignment_strategy
+        if self.savepath is not None:
+            self.savefile = open(self.savepath, "a+", buffering=1)
+            self.trial_idx = 0
 
-#     def run(self):
-#         if self.savepath is not None:
-#             self.savefile = open(self.savepath, "a+", buffering=1)
-#             self.trial_idx = 0
+    def mouse_callback(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            print('left button down')
+            if not self.drawing:
+                self.drawing = True
+                self.draw_traj = []
+            self.draw_traj.append(np.array([x, y]))
+        elif event == cv2.EVENT_MOUSEMOVE:
+            if self.drawing:
+                self.draw_traj.append(np.array([x, y]))
+            else:
+                self.mouse_pos = np.array([x, y])
+        elif event == cv2.EVENT_LBUTTONUP:
+            print('left button up')
+            self.drawing = False
+            self.keep_drawing = True
+        else:
+            self.mouse_pos = np.array([x, y])
 
-#         while self.running:
-#             self.update_mouse_pos()
+    def run(self):
+        img = self.env.render()  # Initialize img before the loop
+        while self.running:
+            print('self.drawing', self.drawing, 'self.keep_drawing', self.keep_drawing)
+            k = cv2.waitKey(1)
+            if k == ord('q'):
+                self.running = False
+                break
+            elif k == ord('s') and self.savefile is not None:
+                self.save_trials()
 
-#             # Handle events
-#             for event in pygame.event.get():
-#                 if event.type == pygame.QUIT:
-#                     self.running = False
-#                     break
-#                 if any(pygame.mouse.get_pressed()):  # Check if mouse button is pressed
-#                     if not self.drawing:
-#                         self.drawing = True
-#                         self.draw_traj = []
-#                     self.draw_traj.append(self.mouse_pos)
-#                 else: # mouse released
-#                     if self.drawing: 
-#                         self.drawing = False # finish drawing action
-#                         self.keep_drawing = True # keep visualizing the drawing
-#                 if event.type == pygame.KEYDOWN: 
-#                     # press s to save the trial
-#                     if event.key == pygame.K_s and self.savefile is not None:
-#                         self.save_trials()             
+            # Check if mouse returns to the agent's location to reset drawing
+            if self.keep_drawing:
+                print('self.mouse_pos', self.mouse_pos, 'self.action', self.action, 'norm: ', np.linalg.norm(self.mouse_pos - self.action))
+                if np.linalg.norm(self.mouse_pos - self.action) < 1:
+                    self.keep_drawing = False
+                    self.draw_traj = []         
 
-#             if self.keep_drawing: # visualize the human drawing input
-#                 # Check if mouse returns to the agent's location
-#                 if np.linalg.norm(self.mouse_pos - self.agent_gui_pos) < 20:  # Threshold distance to reactivate the agent
-#                     self.keep_drawing = False # delete the drawing
-#                     self.draw_traj = []
+            if not self.drawing: # inference mode
+                if not self.keep_drawing and self.mouse_pos is not None:
+                    self.update_agent_pos()
+                if len(self.draw_traj) > 0:
+                    guide = np.array(self.draw_traj) / self.gui_size[0] * self.SPACE_SIZE
+                else:
+                    guide = None
 
-#             if not self.drawing: # inference mode
-#                 if not self.keep_drawing:
-#                     self.update_agent_pos(self.mouse_pos.copy())
-#                 if len(self.draw_traj) > 0:
-#                     guide = np.array([self.gui2xy(point) for point in self.draw_traj])
-#                 else:
-#                     guide = None
-#                 self.xy_pred = self.infer_target(guide, visualizer=(self if self.vis_dp_dynamics and self.keep_drawing else None))
-#                 self.scores = None
-#                 if self.alignment_strategy == 'post-hoc' and guide is not None:
-#                     xy_pred, scores = self.similarity_score(self.xy_pred, guide)
-#                     self.xy_pred = xy_pred
-#                     self.scores = scores
-#                 self.collisions = self.check_collision(self.xy_pred)
+                for window_name, policy in self.ls_window_names_and_policies:
+                    # Determine the policy tag based on the window name
+                    policy_tag = 'dp' if 'Diffusion' in window_name else 'act'
+                    # Always perform inference, guide can be None
+                    xy_pred = self.infer_target(policy, policy_tag, guide=guide)
+                    # Optionally, apply alignment strategy
+                    scores = None
+                    if self.alignment_strategy == 'post-hoc' and guide is not None:
+                        xy_pred, scores = self.similarity_score(xy_pred, guide)
+                        # Store predictions
+                    # self.xy_pred = xy_pred
+                    # self.scores = scores
+                    # 
+                    img = self.env.render()  # Update img only when not drawing
+                    # Update the environment and display
+                    # self.obs, *_ = self.env.step(self.action)
+                    self.update_screen(img, window_name, xy_pred, scores=scores, keep_drawing=(self.keep_drawing or self.drawing))
+            else:
+                # If drawing, just display the drawing without inference
+                for window_name, _ in self.ls_window_names_and_policies:
+                    img_ = img.copy()  # Use the last rendered image
+                    # Draw the agent
+                    if self.action is not None:
+                        agent_pos = tuple(np.round(self.action).astype(int))
+                        agent_color_bgr = self.agent_color[::-1]
+                        agent_color = tuple(map(int, agent_color_bgr))
+                        cv2.circle(
+                            img_,
+                            agent_pos,
+                            radius=10,
+                            color=agent_color,
+                            thickness=-1,
+                        )
+                    # Draw the drawing trajectory
+                    if len(self.draw_traj) > 1:
+                        pts = np.array(self.draw_traj, np.int32).reshape((-1, 1, 2))
+                        cv2.polylines(img_, [pts], isClosed=False, color=(128, 128, 128), thickness=2)
+                    cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
 
-#             self.update_screen(self.xy_pred, self.collisions, self.scores, (self.keep_drawing or self.drawing))
-#             if self.vis_dp_dynamics and not self.drawing and self.keep_drawing:
-#                 time.sleep(1)
-#             self.clock.tick(30)
 
-#         pygame.quit()
 
-#     def save_trials(self):
-#         b, t, _ = self.xy_pred.shape
-#         xy_pred = self.xy_pred.reshape(b*t, 2)
-#         pred_gui_traj = [self.xy2gui(xy) for xy in xy_pred]
-#         pred_gui_traj = np.array(pred_gui_traj).reshape(b, t, 2)
-#         entry = {
-#             "trial_idx": self.trial_idx,
-#             "agent_pos": self.agent_gui_pos.tolist(),
-#             "guide": np.array(self.draw_traj).tolist(),
-#             "pred_traj": pred_gui_traj.astype(int).tolist(),
-#             "collisions": self.collisions.tolist()
-#         }
-#         self.savefile.write(json.dumps(entry) + "\n")
-#         print(f"Trial {self.trial_idx} saved to {self.savepath}.")
-#         self.trial_idx += 1
+            self.clock.tick(self.fps)
+
+    def save_trials(self):
+        if self.xy_pred is not None:
+            b, t, _ = self.xy_pred.shape
+            xy_pred = self.xy_pred.reshape(b * t, 2)
+            pred_gui_traj = xy_pred / self.SPACE_SIZE * self.gui_size[0]
+            pred_gui_traj = pred_gui_traj.reshape(b, t, 2)
+            entry = {
+                "trial_idx": self.trial_idx,
+                "agent_pos": self.action.tolist(),
+                "guide": np.array(self.draw_traj).tolist(),
+                "pred_traj": pred_gui_traj.astype(int).tolist(),
+            }
+            self.savefile.write(json.dumps(entry) + "\n")
+            print(f"Trial {self.trial_idx} saved to {self.savepath}.")
+            self.trial_idx += 1
+
 
 # class MazeExp(ConditionalMaze):
 #     # for replaying the trials and benchmarking the alignment strategies
@@ -486,6 +526,6 @@ if __name__ == "__main__":
     #             alignment_tag = 'rd'
     #         savepath = f"{args.loadpath[:-5]}_{policy_tag}_{alignment_tag}{args.savepath}"
     #     interactiveMaze = MazeExp(policy, args.vis_dp_dynamics, savepath, alignment_strategy, policy_tag=policy_tag, loadpath=args.loadpath)
-    # else:
-    #     interactiveMaze = ConditionalMaze(policy, args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
+    else:
+        interactiveEnv = ConditionalEnv(args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
     interactiveEnv.run()
