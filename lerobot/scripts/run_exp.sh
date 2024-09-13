@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXP_FILE="exp01.json"
+EXP_FILE="exp03.json"
 
 echo "Running experiments for $EXP_FILE with ACT and post-hoc alignment"
 echo ""

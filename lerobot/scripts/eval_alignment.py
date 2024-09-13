@@ -5,6 +5,9 @@ from scipy.spatial.distance import euclidean
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
 
 exp_tag = 'exp02'
 exps = {
@@ -64,12 +67,6 @@ def l2_dist(samples, guide):
     guide = np.expand_dims(guide[indices], axis=0) # (1, pred_horizon, action_dim)
     guide = np.tile(guide, (samples.shape[0], 1, 1)) # (B, pred_horizon, action_dim)
     dist = np.linalg.norm(samples[:, :] - guide[:, :], axis=2, ord=2).mean(axis=1) # (B,)
-    # scores = 1 - scores / (scores.max() + 1e-6) # normalize
-    # temperature = 20
-    # scores = softmax(scores*temperature)
-    # # print('scores:', [f'{score:.3f}' for score in scores])
-    # # normalize the score to be between 0 and 1
-    # scores = (scores - scores.min()) / (scores.max() - scores.min())
     # # sort the predictions based on scores, from smallest to largest, so that larger scores will be drawn on top
     sort_idx = np.argsort(dist)
     dist = dist[sort_idx]
@@ -90,29 +87,20 @@ def dtw_dist(samples, guide):
     samples = samples[sort_idx]
     return samples, dist
 
-
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-
 def plot_dist_vs_collisions():
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))  # 2x2 grid for the four plots
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4))  # 1x2 grid for the two plots
     
-    # Create lists to store the mean statistics for each experiment for both l2 and dtw
+    # Create lists to store the mean statistics for each experiment
     mean_min_dists_l2 = []
     mean_avg_dists_l2 = []
-    mean_min_dists_dtw = []
-    mean_avg_dists_dtw = []
     mean_collision_rates = []
     exps = []
-    alignment_strategies = []  # To store alignment strategies for color encoding
-    markers = []               # To store full marker names like 'act_op', 'dp_op', etc.
+    alignment_strategies = []
+    markers = []
 
     for exp, trials in exp_dict.items():
         min_dists_l2 = []
         avg_dists_l2 = []
-        min_dists_dtw = []
-        avg_dists_dtw = []
         collision_rates = []
         
         # Gather data for each trial in the current experiment
@@ -123,7 +111,7 @@ def plot_dist_vs_collisions():
             # Calculate l2 distances
             pred_traj_l2, dist_l2 = l2_dist(pred_traj, guide)
             if 'np' in exp:
-                # randomly choosing one as min
+                # Randomly choosing one as min
                 rand_idx = np.random.randint(0, len(pred_traj_l2))
                 min_dist_l2 = dist_l2[rand_idx]
             else:   
@@ -132,48 +120,31 @@ def plot_dist_vs_collisions():
             min_dists_l2.append(min_dist_l2)
             avg_dists_l2.append(avg_dist_l2)
             
-            # # Calculate dtw distances
-            # pred_traj_dtw, dist_dtw = dtw_dist(pred_traj, guide)
-            # if 'np' in exp:
-            #     # randomly choosing one as min
-            #     rand_idx = np.random.randint(0, len(pred_traj_dtw))
-            #     min_dist_dtw = dist_dtw[rand_idx]
-            # min_dist_dtw = dist_dtw.min()
-            # avg_dist_dtw = dist_dtw.mean()
-            # min_dists_dtw.append(min_dist_dtw)
-            # avg_dists_dtw.append(avg_dist_dtw)
-            
             # Calculate collision rates
             collision_rate = np.mean(trial['collisions'])
             collision_rates.append(collision_rate)
             
         # Extract alignment strategy and policy type from experiment name
-        alignment_strategy = get_alignment_strategy(exp)  # e.g., 'op', 'np', 'bi'
-        # policy_type = exp.split('_')[0]         # e.g., 'act', 'dp'
+        alignment_strategy = get_alignment_strategy(exp)
         
         # Add to lists
         alignment_strategies.append(alignment_strategy)
-        markers.append(exp)  # Full name like 'act_op', 'dp_bi', etc.
+        markers.append(exp)
         
         # Compute the mean statistics across trials for this experiment
         mean_min_dists_l2.append(np.mean(min_dists_l2))
         mean_avg_dists_l2.append(np.mean(avg_dists_l2))
-        mean_min_dists_dtw.append(np.mean(min_dists_dtw))
-        mean_avg_dists_dtw.append(np.mean(avg_dists_dtw))
         mean_collision_rates.append(np.mean(collision_rates))
         exps.append(exp)
 
     # Convert to arrays for plotting
     mean_min_dists_l2 = np.array(mean_min_dists_l2)
     mean_avg_dists_l2 = np.array(mean_avg_dists_l2)
-    mean_min_dists_dtw = np.array(mean_min_dists_dtw)
-    mean_avg_dists_dtw = np.array(mean_avg_dists_dtw)
     mean_collision_rates = np.array(mean_collision_rates)
-    alignment_strategies = np.array(alignment_strategies)  # for color
-    markers = np.array(markers)                            # for markers
+    alignment_strategies = np.array(alignment_strategies)
+    markers = np.array(markers)
 
-    # set marker styles cirlce for dp and diamond for act
-    # set different colors for different alignment strategies
+    # Set marker styles and colors
     marker_styles = {}
     alignment_color_map = {}
     for exp in exp_dict.keys():
@@ -198,81 +169,138 @@ def plot_dist_vs_collisions():
         else:
             raise ValueError(f'Unknown alignment strategy for experiment {exp}')
 
-    # Map the alignment strategy to colors manually
-    # alignment_palette = [alignment_color_map[e] for e in exps]
+    # Replace zero values with a small positive number for log scale plotting
+    dist_normalization = 900
+    adjusted_collision_rates = [x if x > 0 else 1e-3 for x in mean_collision_rates] 
+    adjusted_min_dists_l2 = [y / dist_normalization for y in mean_min_dists_l2] 
+    adjusted_avg_dists_l2 = [y / dist_normalization for y in mean_avg_dists_l2] 
 
-    # Define marker styles based on 'act' and 'dp'
-    # marker_styles = {
-    #     'act': 'D',  # Diamond for 'act'
-    #     'dp': 'o'    # Circle for 'dp'
-    # }
+    # add a small jitter to the x values and y values to avoid overlapping points
+    np.random.seed(1)
+    adjusted_collision_rates += np.random.normal(0, 0.001, len(adjusted_collision_rates))
+    adjusted_min_dists_l2 += np.random.normal(0, 0.001, len(adjusted_min_dists_l2))
+    adjusted_avg_dists_l2 += np.random.normal(0, 0.001, len(adjusted_avg_dists_l2))
 
-    # Define the hue grouping based on alignment strategies
-    hue_group = [exp.split('_')[1] for exp in exp_dict.keys()]  # This ensures same hue for the same alignment strategy
 
-    # Use 'dp' and 'act' to control marker shapes
-    style_group = [exp.split('_')[0] for exp in exp_dict.keys()]  # 'dp' or 'act' for marker shapes
+    # Plot using Seaborn with increased marker size
 
-    # Replace zero values with a small positive number (1e-10) for log scale plotting
-    adjusted_collision_rates = [x if x > 0 else 1e-3 for x in mean_collision_rates]
-    adjusted_min_dists_l2 = [y if y > 0 else 1e-3 for y in mean_min_dists_l2]
-    adjusted_avg_dists_l2 = [y if y > 0 else 1e-3 for y in mean_avg_dists_l2]
-
-    # Plot using Seaborn with 'hue' for color and 'style' for different markers
-    sns.scatterplot(x=adjusted_collision_rates + np.random.normal(0, 0.005, size=len(mean_collision_rates)), y=adjusted_min_dists_l2, hue=exps, style=markers,
-                    markers=marker_styles, ax=ax[0, 0], legend='full')
-    sns.scatterplot(x=adjusted_collision_rates + np.random.normal(0, 0.005, size=len(mean_collision_rates)), y=adjusted_avg_dists_l2, hue=exps, style=markers,
-                    markers=marker_styles, ax=ax[0, 1], legend='full')
+    sns.scatterplot(
+        x=adjusted_collision_rates,  
+        y=adjusted_min_dists_l2, 
+        hue=exps, 
+        style=markers, 
+        markers=marker_styles, 
+        s=100,  # Increased marker size
+        ax=ax[0], 
+        legend=False  # Removed legend
+    )
+    sns.scatterplot(
+        x=adjusted_collision_rates, 
+        y=adjusted_avg_dists_l2, 
+        hue=exps, 
+        style=markers, 
+        markers=marker_styles, 
+        s=100,  # Increased marker size
+        ax=ax[1], 
+        legend=False  # Removed legend
+    )
     
-    # for each exp print the mean min dist and collision rate
+    # For each exp, print the mean min dist and collision rate
     for exp, mean_min_dist, mean_collision_rate in zip(exps, mean_min_dists_l2, mean_collision_rates):
-        print(f'{exp}: Mean Min Dist: {mean_min_dist:.3f}, Mean Collision Rate: {mean_collision_rate:.3f}')
-
-
-    # Set log scale for both axes
-    ax[0, 0].set_xscale('log')
-    ax[0, 0].set_yscale('log')
-    ax[0, 1].set_xscale('log')
-    ax[0, 1].set_yscale('log')
-
-    ax[0, 0].set_title('L2: Mean Min Distance vs Mean Collision Rate')
-    ax[0, 0].set_xlabel('Mean Collision Rate')
-    ax[0, 0].set_ylabel('Mean Min Distance (L2)')
-    ax[0, 0].set_xlim(-0.01, 0.38)
-    ax[0, 0].set_ylim(50, 300)
-    ax[0, 0].legend(loc='lower right')
-
-
-    ax[0, 1].set_title('L2: Mean Avg Distance vs Mean Collision Rate')
-    ax[0, 1].set_xlabel('Mean Collision Rate')
-    ax[0, 1].set_ylabel('Mean Avg Distance (L2)')
-    ax[0, 1].set_xlim(-0.01, 0.38)
-    ax[0, 1].set_ylim(50, 300)
-    ax[0, 1].legend(loc='lower right')
-
-    # # Plot for DTW distance
-    # sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_min_dists_dtw, hue=exps, style=markers,
-    #                 markers=marker_styles, ax=ax[1, 0], legend='full')
-    # sns.scatterplot(x=mean_collision_rates + np.random.normal(0, 0.01, size=len(mean_collision_rates)), y=mean_avg_dists_dtw, hue=exps, style=markers,
-    #                 markers=marker_styles, ax=ax[1, 1], legend='full')
+        print(f'{exp}: Mean Min Dist: {mean_min_dist:.3f}, Collision Rate: {mean_collision_rate:.3f}')
 
     # Set log scale for both axes
-    ax[1, 0].set_xscale('log')
-    ax[1, 0].set_yscale('log')
-    ax[1, 1].set_xscale('log')
-    ax[1, 1].set_yscale('log')
+    ax[0].set_xscale('log')
+    ax[0].set_yscale('log')
+    ax[1].set_xscale('log')
+    ax[1].set_yscale('log')
 
-    # ax[1, 0].set_title('DTW: Mean Min Distance vs Mean Collision Rate')
-    # ax[1, 0].set_xlabel('Mean Collision Rate')
-    # ax[1, 0].set_ylabel('Mean Min Distance (DTW)')
+    ax[0].set_title('Min Distance vs Collision Rate')
+    ax[0].set_xlabel('Collision Rate')
+    ax[0].set_ylabel('Min Distance (Normalized L2)')
+    ax[0].set_xlim(-0.01, 0.38)
+    ax[0].set_ylim(0.08, 0.33)
+    # Removed legend
+    # ax[0].legend(loc='lower right')
+
+    ax[1].set_title('Mean Distance vs Collision Rate')
+    ax[1].set_xlabel('Collision Rate')
+    ax[1].set_ylabel('Mean Distance (Normalized L2)')
+    ax[1].set_xlim(-0.01, 0.38)
+    ax[1].set_ylim(0.08, 0.33)
+    # Removed legend
+    # ax[1].legend(loc='lower right')
+
+    # Annotate each point with experiment labels
+    method_names = {
+        'act_np': 'ACT: No Perturbation',
+        'act_ph': 'ACT: Post-Hoc Ranking',
+        'act_op': 'ACT: State Perturbation',
+        'dp_np': 'DP: No Perturbation',
+        'dp_ph': 'DP: Post-Hoc Ranking',
+        'dp_op': 'DP: State Perturbation',
+        'dp_bi': 'DP: Biased Initialization',
+        'dp_gd': 'DP: Vanilla Diffusion',
+        'dp_rd': 'DP: Stochastic Sampling',
+    }
+    method_offsets = {
+        'act_np': (15, 15),
+        'act_ph': (-20, 0),
+        'act_op': (-5, -15),
+        'dp_np': (15, 0),
+        'dp_ph': (5, 15),
+        'dp_op': (15, 0),
+        'dp_bi': (15, -15),
+        'dp_gd': (15, 15),
+        'dp_rd': (0, -15),
+    }
+
+    for i, txt in enumerate(exps):
+        x = adjusted_collision_rates[i]
+        y = adjusted_min_dists_l2[i]
+        # Determine offset based on position
+        offset_x, offset_y = method_offsets[txt]
+        ha = 'left' if x < 0.1 else 'right'
+        ax[0].annotate(
+            method_names[txt],
+            (x, y), 
+            textcoords="offset points", 
+            xytext=(offset_x, offset_y), 
+            ha=ha, 
+            fontsize=10  # Increased font size
+        )
     
-    # ax[1, 1].set_title('DTW: Mean Avg Distance vs Mean Collision Rate')
-    # ax[1, 1].set_xlabel('Mean Collision Rate')
-    # ax[1, 1].set_ylabel('Mean Avg Distance (DTW)')
+    method_offsets2 = {
+        'act_np': (35, 10),
+        'act_ph': (-15, -5),
+        'act_op': (0, -20),
+        'dp_np': (-10, 10),
+        'dp_ph': (-5, -15),
+        'dp_op': (10, 10),
+        'dp_bi': (15, -10),
+        'dp_gd': (15, 0),
+        'dp_rd': (-5, -20),
+    }    
 
-    # plt.legend(title='Alignment Strategy and Marker')
+    for i, txt in enumerate(exps):
+        x = adjusted_collision_rates[i]
+        y = adjusted_avg_dists_l2[i]
+        # Determine offset based on position
+        offset_x, offset_y = method_offsets2[txt]
+        ha = 'left' if x < 0.1 else 'right'
+        ax[1].annotate(
+            method_names[txt],
+            (x, y), 
+            textcoords="offset points", 
+            xytext=(offset_x, offset_y), 
+            ha=ha, 
+            fontsize=10  # Increased font size
+        )
+
     plt.tight_layout()
     plt.show()
+
+
 
 if __name__ == '__main__':
     plot_dist_vs_collisions()
