@@ -183,6 +183,7 @@ class PushTEnv:
                 thickness=-1,
             )
         cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
+        return img_
 
 class UnconditionalEnv(PushTEnv):
     def __init__(self, policy_tag=None):
@@ -336,7 +337,7 @@ class ConditionalEnv(UnconditionalEnv):
                 for window_name, _ in self.ls_window_names_and_policies:
                     img_ = img.copy()  # Use the last rendered image
                     policy_tag = 'dp' if 'Diffusion' in window_name else 'act'
-                    self.update_screen(img_, window_name, self.xy_pred[policy_tag], scores=self.scores[policy_tag], keep_drawing=(self.keep_drawing or self.drawing))
+                    img_ = self.update_screen(img_, window_name, self.xy_pred[policy_tag], scores=self.scores[policy_tag], keep_drawing=(self.keep_drawing or self.drawing))
                     # Draw the agent
                     if self.action is not None:
                         agent_pos = tuple(np.round(self.action).astype(int))
@@ -361,6 +362,7 @@ class ConditionalEnv(UnconditionalEnv):
 
     def save_trials(self):
         if not self.xy_pred: # empty dict evaluates to False
+            assert self.policy_tag in ['dp', 'act']
             xy_pred = self.xy_pred[self.policy_tag]
             b, t, _ = xy_pred.shape
             xy_pred = xy_pred.reshape(b * t, 2)
