@@ -201,7 +201,7 @@ class DiffusionModel(nn.Module):
 
         final_influence_step = self.config.num_train_timesteps
         if self.alignment_strategy in ['guided-diffusion', 'recurrent-diffusion']:
-            final_influence_step = 0
+            final_influence_step = 10 # 10 seems to be the best value pushT rd, 0 is good for maze2d
 
         for t in self.noise_scheduler.timesteps:
             if visualizer is not None and normalizer is not None:
