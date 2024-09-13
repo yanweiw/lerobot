@@ -265,28 +265,30 @@ class ConditionalEnv(UnconditionalEnv):
         self.xy_pred = {}  # numpy array
         self.scores = {}  # numpy array
         self.alignment_strategy = alignment_strategy
+        if self.dp_img is not None:
+            self.dp_img.diffusion.alignment_strategy = alignment_strategy
         if self.savepath is not None:
             self.savefile = open(self.savepath, "a+", buffering=1)
             self.trial_idx = 0
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
-            print('left button down')
+            # print('left button down')
             if not self.drawing:
                 self.drawing = True
                 self.draw_traj = []
             self.draw_traj.append(np.array([x, y]))
         elif event == cv2.EVENT_MOUSEMOVE:
-            print('mouse move')
+            # print('mouse move')
             if self.drawing:
                 self.draw_traj.append(np.array([x, y]))
             self.mouse_pos = np.array([x, y])
         elif event == cv2.EVENT_LBUTTONUP:
-            print('left button up')
+            # print('left button up')
             self.drawing = False
             self.keep_drawing = True
         else:
-            print('mouse move')
+            # print('mouse move')
             self.mouse_pos = np.array([x, y])
 
     def run(self):
@@ -302,7 +304,6 @@ class ConditionalEnv(UnconditionalEnv):
 
             # Check if mouse returns to the agent's location to reset drawing
             if self.keep_drawing:
-                print('self.mouse_pos', self.mouse_pos, 'self.action', self.action, 'norm: ', np.linalg.norm(self.mouse_pos - self.action))
                 if np.linalg.norm(self.mouse_pos - self.action) < 10:
                     self.keep_drawing = False
                     self.draw_traj = []         
@@ -353,7 +354,7 @@ class ConditionalEnv(UnconditionalEnv):
                     # Draw the drawing trajectory
                     if len(self.draw_traj) > 1:
                         pts = np.array(self.draw_traj, np.int32).reshape((-1, 1, 2))
-                        cv2.polylines(img_, [pts], isClosed=False, color=(128, 128, 128), thickness=2)
+                        cv2.polylines(img_, [pts], isClosed=False, color=(128, 128, 128), thickness=5)
                     cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
 
 
