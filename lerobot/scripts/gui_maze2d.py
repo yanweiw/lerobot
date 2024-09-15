@@ -352,8 +352,13 @@ class MazeExp(ConditionalMaze):
         #     self.trial_idx = 0
         self.alignment_strategy = alignment_strategy
         print(f"Alignment strategy: {alignment_strategy}")
+        # create image dir based on policy and alignment strategy
+        self.image_save_dir = os.path.join(os.path.dirname(loadpath), f"images_{policy_tag}_{alignment_strategy}")
+        if not os.path.exists(self.image_save_dir):
+            os.makedirs(self.image_save_dir, exist_ok=True)
 
     def run(self):
+        self.num_skips = 0
         if self.savepath is not None:
             self.savefile = open(savepath, "w+", buffering=1)
             self.trial_idx = 0
@@ -420,7 +425,11 @@ class MazeExp(ConditionalMaze):
                 if event.type == pygame.KEYDOWN:
                     assert self.savefile is None
                     if event.key == pygame.K_n and self.savefile is None: # visualization mode rather than saving mode
-                        print("manual skip to the next trial")
+                        print('manually skipping trial index:', self.trial_idx, 'with skip count:', self.num_skips)
+                        # save the experiment figure
+                        filename = os.path.join(self.image_save_dir, f"trial_{self.num_skips}.png")
+                        pygame.image.save(self.screen, filename)
+                        self.num_skips += 1
                         self.trial_idx += 1
 
             self.clock.tick(10)
