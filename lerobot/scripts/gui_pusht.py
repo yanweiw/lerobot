@@ -29,6 +29,7 @@ class PushTEnv:
         #       gui_size[1] #512
         # xy is the same
 
+        self.seed = 0
         self.gui_size = (512, 512)
         self.SPACE_SIZE = 512
         self.fps = 10
@@ -229,8 +230,10 @@ class UnconditionalEnv(PushTEnv):
                 raise ValueError(f"Invalid policy tag: {policy_tag}")
         return actions
 
-    def run(self):
-        self.obs, _ = self.env.reset()
+    def run(self, seed=0):
+        self.seed = seed
+        self.obs, _ = self.env.reset(seed=self.seed)
+        np.random.seed(self.seed)
         while self.running:
             k = cv2.waitKey(1)
             if k == ord("q"):
@@ -291,7 +294,10 @@ class ConditionalEnv(UnconditionalEnv):
             # print('mouse move')
             self.mouse_pos = np.array([x, y])
 
-    def run(self):
+    def run(self, seed=0):
+        self.seed = seed
+        self.obs, _ = self.env.reset(seed=self.seed)
+        np.random.seed(self.seed)
         img = self.env.render()  # Initialize img before the loop
         while self.running:
             # print('self.drawing', self.drawing, 'self.keep_drawing', self.keep_drawing, 'self.mouse_pos', self.mouse_pos, 'self.action', self.action)
@@ -301,6 +307,11 @@ class ConditionalEnv(UnconditionalEnv):
                 break
             elif k == ord('s') and self.savefile is not None:
                 self.save_trials()
+                self.obs, _ = self.env.reset(seed=self.seed)
+                np.random.seed(self.seed)
+                self.draw_traj = []
+                self.keep_drawing = False
+                self.drawing = False
 
             # Check if mouse returns to the agent's location to reset drawing
             if self.keep_drawing:
@@ -362,14 +373,18 @@ class ConditionalEnv(UnconditionalEnv):
             self.clock.tick(self.fps)
 
     def save_trials(self):
-        if not self.xy_pred: # empty dict evaluates to False
-            assert self.policy_tag in ['dp', 'act']
-            xy_pred = self.xy_pred[self.policy_tag]
+        if self.xy_pred: # empty dict evaluates to False
+            policy_tag = list(self.xy_pred.keys())
+            assert len(policy_tag) == 1
+            policy_tag = policy_tag[0]
+            assert policy_tag in ['dp', 'act']
+            xy_pred = self.xy_pred[policy_tag]
             b, t, _ = xy_pred.shape
             xy_pred = xy_pred.reshape(b * t, 2)
             pred_gui_traj = xy_pred / self.SPACE_SIZE * self.gui_size[0]
             pred_gui_traj = pred_gui_traj.reshape(b, t, 2)
             entry = {
+                "seed": self.seed, 
                 "trial_idx": self.trial_idx,
                 "agent_pos": self.action.tolist(),
                 "guide": np.array(self.draw_traj).tolist(),
@@ -378,6 +393,7 @@ class ConditionalEnv(UnconditionalEnv):
             self.savefile.write(json.dumps(entry) + "\n")
             print(f"Trial {self.trial_idx} saved to {self.savepath}.")
             self.trial_idx += 1
+            self.seed += 1
 
 
 # class MazeExp(ConditionalMaze):
@@ -535,4 +551,4 @@ if __name__ == "__main__":
     #     interactiveMaze = MazeExp(policy, args.vis_dp_dynamics, savepath, alignment_strategy, policy_tag=policy_tag, loadpath=args.loadpath)
     else:
         interactiveEnv = ConditionalEnv(args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
-    interactiveEnv.run()
+    interactiveEnv.run(seed=2)
