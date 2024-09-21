@@ -263,14 +263,14 @@ def plot_dist_vs_collisions():
 
     # Annotate each point with experiment labels
     method_names = {
-        'act_np': 'ACT: No Perturbation',
+        'act_np': 'ACT: Random Sampling',
         'act_ph': 'ACT: Post-Hoc Ranking',
-        'act_op': 'ACT: State Perturbation',
-        'dp_np': 'DP: No Perturbation',
+        'act_op': 'ACT: Output Perturbation',
+        'dp_np': 'DP: Random Sampling',
         'dp_ph': 'DP: Post-Hoc Ranking',
-        'dp_op': 'DP: State Perturbation',
+        'dp_op': 'DP: Output Perturbation',
         'dp_bi': 'DP: Biased Initialization',
-        'dp_gd': 'DP: Vanilla Diffusion',
+        'dp_gd': 'DP: Guided Diffusion',
         'dp_rd': 'DP: Stochastic Sampling',
     }
     method_offsets = {
