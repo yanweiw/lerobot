@@ -152,3 +152,5 @@ cython_debug/
 lerobot/scripts/*.json
 lerobot/scripts/images_act_output-perturb lerobot/scripts/images_act_post-hoc lerobot/scripts/images_dp_biased-initialization lerobot/scripts/images_dp_guided-diffusion lerobot/scripts/images_dp_output-perturb lerobot/scripts/images_dp_post-hoc lerobot/scripts/images_dp_recurrent-diffusion lerobot/scripts/images_.zip
 lerobot/scripts/images_*
+lerobot/scripts/dp_100000
+lerobot/scripts/exps

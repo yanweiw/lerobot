@@ -460,7 +460,8 @@ if __name__ == "__main__":
         alignment_strategy = 'recurrent-diffusion'
 
     if args.policy in ["diffusion", "dp"]:
-        checkpoint_path = '/mnt/data/maze2d_dp/outputs/2024.08.27/22.43.32_maze2d_diffusion/checkpoints/100000/'
+        # checkpoint_path = '/mnt/data/maze2d_dp/outputs/2024.08.27/22.43.32_maze2d_diffusion/checkpoints/100000/'
+        checkpoint_path = 'dp_100000/'
     elif args.policy in ["act"]:
         checkpoint_path = '/mnt/data/maze2d_act/outputs/2024.08.28/01.54.30_maze2d_act/checkpoints/100000/'
 
