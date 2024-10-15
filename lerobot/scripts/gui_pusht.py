@@ -183,6 +183,12 @@ class PushTEnv:
                 thickness=-1,
             )
         cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
+        # Draw the drawing trajectory
+        if len(self.draw_traj) > 1:
+            pts = np.array(self.draw_traj, np.int32).reshape((-1, 1, 2))
+            cv2.polylines(img_, [pts], isClosed=False, color=(128, 128, 128), thickness=5)
+        cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
+
         return img_
 
 class UnconditionalEnv(PushTEnv):
@@ -323,7 +329,7 @@ class ConditionalEnv(UnconditionalEnv):
                     xy_pred = self.infer_target(policy, policy_tag, guide=guide)
                     # Optionally, apply alignment strategy
                     scores = None
-                    if self.alignment_strategy == 'post-hoc' and guide is not None:
+                    if self.alignment_strategy in ['post-hoc', 'recurrent-diffusion'] and guide is not None:
                         xy_pred, scores = self.similarity_score(xy_pred, guide)
                     # Store predictions
                     self.xy_pred[policy_tag] = xy_pred
@@ -351,13 +357,6 @@ class ConditionalEnv(UnconditionalEnv):
                             color=agent_color,
                             thickness=-1,
                         )
-                    # Draw the drawing trajectory
-                    if len(self.draw_traj) > 1:
-                        pts = np.array(self.draw_traj, np.int32).reshape((-1, 1, 2))
-                        cv2.polylines(img_, [pts], isClosed=False, color=(128, 128, 128), thickness=5)
-                    cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
-
-
 
             self.clock.tick(self.fps)
 
