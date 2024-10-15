@@ -8,8 +8,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+plt.rcParams["font.family"] = "Times New Roman"
+# plt.rcParams['font.size'] = 14  # Adjust the font size as needed
+plt.rcParams['font.weight'] = 'bold'
 
-exp_tag = 'exp02'
+exp_tag = 'exps/exp02'
 exps = {
     'act_np': exp_tag + '_act_ph.json',
     'act_ph': exp_tag + '_act_ph.json',
@@ -282,7 +285,7 @@ def plot_dist_vs_collisions():
         'dp_op': (15, -5),
         'dp_bi': (15, -15),
         'dp_gd': (15, 15),
-        'dp_rd': (0, -15),
+        'dp_rd': (-10, -20),
     }
 
     for i, txt in enumerate(exps_list):
@@ -297,7 +300,7 @@ def plot_dist_vs_collisions():
             textcoords="offset points",
             xytext=(offset_x, offset_y),
             ha=ha,
-            fontsize=10,
+            fontsize=12,
             color=alignment_color_map.get(txt, 'black')  # Set text color to match marker
         )
 
