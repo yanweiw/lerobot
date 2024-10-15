@@ -150,3 +150,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 lerobot/scripts/*.json
+lerobot/scripts/dp_100000/
+lerobot/scripts/exps
+lerobot/scripts/images*
