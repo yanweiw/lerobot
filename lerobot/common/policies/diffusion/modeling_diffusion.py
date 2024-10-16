@@ -93,15 +93,17 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         return set(self.config.input_shapes)
 
     @torch.no_grad
-    def run_inference(self, observation_batch: dict[str, Tensor], guide: Tensor | None = None, visualizer=None) -> Tensor:
+    def run_inference(self, observation_batch: dict[str, Tensor], guide: Tensor | None = None, negative_guide: Tensor | None = None, visualizer=None) -> Tensor:
         observation_batch = self.normalize_inputs(observation_batch)
         if guide is not None:
             guide = self.normalize_targets({"action": guide})["action"]
+        if negative_guide is not None:
+            negative_guide = self.normalize_targets({"action": negative_guide})["action"]
         if len(self.expected_image_keys) > 0:
             observation_batch["observation.images"] = torch.stack(
                 [observation_batch[k] for k in self.expected_image_keys], dim=-4
             )
-        actions = self.diffusion.generate_actions(observation_batch, guide=guide, visualizer=visualizer, normalizer=self)
+        actions = self.diffusion.generate_actions(observation_batch, guide=guide, negative_guide=negative_guide, visualizer=visualizer, normalizer=self)
         actions = self.unnormalize_outputs({"action": actions})["action"]
         return actions
 
@@ -169,7 +171,7 @@ class DiffusionModel(nn.Module):
 
     # ========= inference  ============
     def conditional_sample(
-        self, batch_size: int, global_cond: Tensor | None = None, generator: torch.Generator | None = None, guide: Tensor | None = None, visualizer=None, normalizer=None
+        self, batch_size: int, global_cond: Tensor | None = None, generator: torch.Generator | None = None, guide: Tensor | None = None, negative_guide: Tensor | None = None, visualizer=None, normalizer=None
     ) -> Tensor:
         device = get_device_from_parameters(self)
         dtype = get_dtype_from_parameters(self)
@@ -236,6 +238,12 @@ class DiffusionModel(nn.Module):
                     pass
                     # print('NOT ADDING INTERACTION GRADIENT AT TIMESTEP: ', t)
 
+                # add negative interaction gradient
+                if negative_guide is not None and t > 0:
+                    negative_grad = self.guide_gradient(sample, negative_guide)
+                    negative_guide_ratio = 10
+                    model_output = model_output - negative_guide_ratio * negative_grad
+
                 # Compute previous image: x_t -> x_t-1
                 scheduler_output = self.noise_scheduler.step(model_output, t, sample, generator=generator)
                 prev_sample = scheduler_output.prev_sample
@@ -293,7 +301,7 @@ class DiffusionModel(nn.Module):
         # Concatenate features then flatten to (B, global_cond_dim).
         return torch.cat(global_cond_feats, dim=-1).flatten(start_dim=1)
 
-    def generate_actions(self, batch: dict[str, Tensor], guide: Tensor | None = None, visualizer=None, normalizer=None) -> Tensor:
+    def generate_actions(self, batch: dict[str, Tensor], guide: Tensor | None = None, negative_guide: Tensor | None = None, visualizer=None, normalizer=None) -> Tensor:
         """
         This function expects `batch` to have:
         {
@@ -311,7 +319,7 @@ class DiffusionModel(nn.Module):
         global_cond = self._prepare_global_conditioning(batch)  # (B, global_cond_dim)
 
         # run sampling
-        actions = self.conditional_sample(batch_size, global_cond=global_cond, guide=guide, visualizer=visualizer, normalizer=normalizer)
+        actions = self.conditional_sample(batch_size, global_cond=global_cond, guide=guide, negative_guide=negative_guide, visualizer=visualizer, normalizer=normalizer)
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
         start = n_obs_steps - 1

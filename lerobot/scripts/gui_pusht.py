@@ -136,7 +136,7 @@ class PushTEnv:
         scores = scores[sort_idx]  
         return samples, scores
 
-    def update_screen(self, img, window_name, xy_pred=None, collisions=None, scores=None, keep_drawing=False, traj_in_gui_space=False):
+    def update_screen(self, img, window_name, xy_pred=None, collisions=None, scores=None, keep_drawing=False, keep_negative_drawing=False, traj_in_gui_space=False):
         img_ = img.copy()
         if xy_pred is not None:
             time_colors = self.generate_time_color_map(xy_pred.shape[1])
@@ -188,6 +188,11 @@ class PushTEnv:
             pts = np.array(self.draw_traj, np.int32).reshape((-1, 1, 2))
             cv2.polylines(img_, [pts], isClosed=False, color=(128, 128, 128), thickness=5)
         cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
+        # Draw the negative drawing trajectory
+        if len(self.negative_draw_traj) > 1:
+            pts = np.array(self.negative_draw_traj, np.int32).reshape((-1, 1, 2))
+            cv2.polylines(img_, [pts], isClosed=False, color=(0, 0, 0), thickness=5)
+        cv2.imshow(window_name, cv2.cvtColor(img_, cv2.COLOR_BGR2RGB))
 
         return img_
 
@@ -196,7 +201,7 @@ class UnconditionalEnv(PushTEnv):
         super().__init__(policy_tag=policy_tag)
         self.clock = pygame.time.Clock()  # For consistent fps
 
-    def infer_target(self, policy, policy_tag, guide=None, visualizer=None):
+    def infer_target(self, policy, policy_tag, guide=None, negative_guide=None, visualizer=None):
         # Use policy and policy_tag passed as parameters
         obs_batch = {
             "observation.state": einops.repeat(
@@ -225,12 +230,14 @@ class UnconditionalEnv(PushTEnv):
     
         if guide is not None:
             guide = torch.from_numpy(guide).float().cuda()
+        if negative_guide is not None:
+            negative_guide = torch.from_numpy(negative_guide).float().cuda()
 
         with torch.autocast(device_type="cuda"), seeded_context(0):
             if policy_tag == 'act':
                 actions = policy.run_inference(obs_batch).cpu().numpy()
             elif policy_tag == 'dp':
-                actions = policy.run_inference(obs_batch, guide=guide, visualizer=visualizer).cpu().numpy()
+                actions = policy.run_inference(obs_batch, guide=guide, negative_guide=negative_guide, visualizer=visualizer).cpu().numpy()
             else:
                 raise ValueError(f"Invalid policy tag: {policy_tag}")
         return actions
@@ -264,10 +271,13 @@ class ConditionalEnv(UnconditionalEnv):
         super().__init__(policy_tag=policy_tag)
         self.drawing = False
         self.keep_drawing = False
+        self.negative_drawing = False
+        self.keep_negative_drawing = False
         self.vis_dp_dynamics = vis_dp_dynamics
         self.savefile = None
         self.savepath = savepath
         self.draw_traj = []  # GUI coordinates
+        self.negative_draw_traj = []  # GUI coordinates
         self.xy_pred = {}  # numpy array
         self.scores = {}  # numpy array
         self.alignment_strategy = alignment_strategy
@@ -278,21 +288,39 @@ class ConditionalEnv(UnconditionalEnv):
             self.trial_idx = 0
 
     def mouse_callback(self, event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN:
+
+        ctrl_pressed = flags & cv2.EVENT_FLAG_CTRLKEY
+
+        if event == cv2.EVENT_LBUTTONDOWN and not ctrl_pressed:
             # print('left button down')
             if not self.drawing:
                 self.drawing = True
                 self.draw_traj = []
             self.draw_traj.append(np.array([x, y]))
-        elif event == cv2.EVENT_MOUSEMOVE:
+        elif event == cv2.EVENT_MOUSEMOVE and not ctrl_pressed:
             # print('mouse move')
             if self.drawing:
                 self.draw_traj.append(np.array([x, y]))
             self.mouse_pos = np.array([x, y])
-        elif event == cv2.EVENT_LBUTTONUP:
+        elif event == cv2.EVENT_LBUTTONUP and not ctrl_pressed:
             # print('left button up')
             self.drawing = False
             self.keep_drawing = True
+        elif event == cv2.EVENT_LBUTTONDOWN and ctrl_pressed:
+            # print('ctrl + left button down')
+            if not self.negative_drawing:
+                self.negative_drawing = True
+                self.negative_draw_traj = []
+            self.negative_draw_traj.append(np.array([x, y]))
+        elif event == cv2.EVENT_MOUSEMOVE and ctrl_pressed:
+            # print('mouse move')
+            if self.negative_drawing:
+                self.negative_draw_traj.append(np.array([x, y]))
+            self.mouse_pos = np.array([x, y])
+        elif event == cv2.EVENT_LBUTTONUP and ctrl_pressed:
+            # print('ctrl + left button up')
+            self.negative_drawing = False
+            self.keep_negative_drawing = True
         else:
             # print('mouse move')
             self.mouse_pos = np.array([x, y])
@@ -312,21 +340,29 @@ class ConditionalEnv(UnconditionalEnv):
             if self.keep_drawing:
                 if np.linalg.norm(self.mouse_pos - self.action) < 10:
                     self.keep_drawing = False
-                    self.draw_traj = []         
+                    self.draw_traj = []
+            if self.keep_negative_drawing:
+                if np.linalg.norm(self.mouse_pos - self.action) < 10:
+                    self.keep_negative_drawing = False
+                    self.negative_draw_traj = []
 
-            if not self.drawing: # inference mode
-                if not self.keep_drawing and self.mouse_pos is not None:
+            if not self.drawing and not self.negative_drawing: # inference mode
+                if not self.keep_drawing and not self.keep_negative_drawing and self.mouse_pos is not None:
                     self.update_agent_pos()
                 if len(self.draw_traj) > 0:
                     guide = np.array(self.draw_traj) / self.gui_size[0] * self.SPACE_SIZE
                 else:
                     guide = None
+                if len(self.negative_draw_traj) > 0:
+                    negative_guide = np.array(self.negative_draw_traj) / self.gui_size[0] * self.SPACE_SIZE
+                else:
+                    negative_guide = None
 
                 for window_name, policy in self.ls_window_names_and_policies:
                     # Determine the policy tag based on the window name
                     policy_tag = 'dp' if 'Diffusion' in window_name else 'act'
                     # Always perform inference, guide can be None
-                    xy_pred = self.infer_target(policy, policy_tag, guide=guide)
+                    xy_pred = self.infer_target(policy, policy_tag, guide=guide, negative_guide=negative_guide)
                     # Optionally, apply alignment strategy
                     scores = None
                     if self.alignment_strategy in ['post-hoc', 'recurrent-diffusion'] and guide is not None:
@@ -338,13 +374,13 @@ class ConditionalEnv(UnconditionalEnv):
                     img = self.env.render()  # Update img only when not drawing
                     # Update the environment and display
                     self.obs, *_ = self.env.step(self.action)
-                    self.update_screen(img, window_name, xy_pred, scores=scores, keep_drawing=(self.keep_drawing or self.drawing))
+                    self.update_screen(img, window_name, xy_pred, scores=scores, keep_drawing=(self.keep_drawing or self.drawing), keep_negative_drawing=(self.keep_negative_drawing or self.negative_drawing))
             else:
                 # If drawing, just display the drawing without inference
                 for window_name, _ in self.ls_window_names_and_policies:
                     img_ = img.copy()  # Use the last rendered image
                     policy_tag = 'dp' if 'Diffusion' in window_name else 'act'
-                    img_ = self.update_screen(img_, window_name, self.xy_pred[policy_tag], scores=self.scores[policy_tag], keep_drawing=(self.keep_drawing or self.drawing))
+                    img_ = self.update_screen(img_, window_name, self.xy_pred[policy_tag], scores=self.scores[policy_tag], keep_drawing=(self.keep_drawing or self.drawing), keep_negative_drawing=(self.keep_negative_drawing or self.negative_drawing))
                     # Draw the agent
                     if self.action is not None:
                         agent_pos = tuple(np.round(self.action).astype(int))
