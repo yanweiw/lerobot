@@ -239,8 +239,8 @@ class DiffusionModel(nn.Module):
                     # print('NOT ADDING INTERACTION GRADIENT AT TIMESTEP: ', t)
 
                 # add negative interaction gradient
-                if negative_guide is not None and t > 0:
-                    negative_grad = self.guide_gradient(sample, negative_guide)
+                if negative_guide is not None and t >= 0:
+                    negative_grad = self.negative_guide_gradient(sample, negative_guide)
                     negative_guide_ratio = 10
                     model_output = model_output - negative_guide_ratio * negative_grad
 
@@ -260,6 +260,22 @@ class DiffusionModel(nn.Module):
 
         return sample
     
+    def negative_guide_gradient(self, naction, negative_guide):
+        # find the minimum distance between naction and negative_guide
+        assert naction.shape[2] == 2 and negative_guide.shape[1] == 2
+        # compute the distance between each entry in naction and negative_guide
+        guide_expanded = negative_guide.unsqueeze(0).unsqueeze(0) # (1, 1, guide_horizon, action_dim)
+        with torch.enable_grad():
+            naction = naction.clone().detach().requires_grad_(True)
+            naction_expanded = naction.unsqueeze(2) # (B, pred_horizon, 1, action_dim)
+            dist = torch.sqrt(((naction_expanded - guide_expanded) ** 2).sum(-1)) # (B, pred_horizon, guide_horizon)
+            # find the minimum distance for each entry in naction
+            min_dist, _ = dist.min(dim=-1) # (B, pred_horizon)
+            mean_min_dist = min_dist.mean(dim=-1) # (B,)
+            grad = torch.autograd.grad(mean_min_dist, naction, grad_outputs=torch.ones_like(mean_min_dist), create_graph=False)[0] # Shape (B, pred_horizon, action_dim)
+
+        return grad
+
     def guide_gradient(self, naction, guide):
         # naction: (B, pred_horizon, action_dim);
         # guide: (guide_horizon, action_dim)

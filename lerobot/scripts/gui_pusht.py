@@ -19,9 +19,10 @@ import json
 import gym_pusht
 import gymnasium as gym
 import cv2
+import random
 
 class PushTEnv:
-    def __init__(self, policy_tag=None):
+    def __init__(self, seed, policy_tag=None):
         # GUI x coord 0 -> gui_size[0] #512
         # GUI y coord 0 
         #         |
@@ -47,7 +48,7 @@ class PushTEnv:
             visualization_width=self.gui_size[0],
             visualization_height=self.gui_size[1],
         )       
-        self.obs, _ = self.env.reset()
+        self.obs, _ = self.env.reset(seed=seed)
         self.action = self.obs["agent_pos"]
 
         # Initialize policies
@@ -197,8 +198,8 @@ class PushTEnv:
         return img_
 
 class UnconditionalEnv(PushTEnv):
-    def __init__(self, policy_tag=None):
-        super().__init__(policy_tag=policy_tag)
+    def __init__(self, seed, policy_tag=None):
+        super().__init__(seed=seed, policy_tag=policy_tag)
         self.clock = pygame.time.Clock()  # For consistent fps
 
     def infer_target(self, policy, policy_tag, guide=None, negative_guide=None, visualizer=None):
@@ -267,8 +268,8 @@ class UnconditionalEnv(PushTEnv):
 
 class ConditionalEnv(UnconditionalEnv):
     # For interactive guidance dataset collection
-    def __init__(self, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
-        super().__init__(policy_tag=policy_tag)
+    def __init__(self, seed, vis_dp_dynamics=False, savepath=None, alignment_strategy=None, policy_tag=None):
+        super().__init__(seed=seed, policy_tag=policy_tag)
         self.drawing = False
         self.keep_drawing = False
         self.negative_drawing = False
@@ -365,7 +366,7 @@ class ConditionalEnv(UnconditionalEnv):
                     xy_pred = self.infer_target(policy, policy_tag, guide=guide, negative_guide=negative_guide)
                     # Optionally, apply alignment strategy
                     scores = None
-                    if self.alignment_strategy in ['post-hoc', 'recurrent-diffusion'] and guide is not None:
+                    if self.alignment_strategy in ['post-hoc'] and guide is not None:
                         xy_pred, scores = self.similarity_score(xy_pred, guide)
                     # Store predictions
                     self.xy_pred[policy_tag] = xy_pred
@@ -526,8 +527,14 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--vis_dp_dynamics', action='store_true', help="Visualize dynamics in DP")
     parser.add_argument('-s', '--savepath', type=str, default=None, help="Filename to save the drawing")
     parser.add_argument('-l', '--loadpath', type=str, default=None, help="Filename to load the drawing")
+    parser.add_argument('--seed', type=int, default=0, help="Random seed")
 
     args = parser.parse_args()
+
+    # set random seed
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
     # Create and load the policy
     device = torch.device("cuda")
@@ -569,5 +576,5 @@ if __name__ == "__main__":
     #         savepath = f"{args.loadpath[:-5]}_{policy_tag}_{alignment_tag}{args.savepath}"
     #     interactiveMaze = MazeExp(policy, args.vis_dp_dynamics, savepath, alignment_strategy, policy_tag=policy_tag, loadpath=args.loadpath)
     else:
-        interactiveEnv = ConditionalEnv(args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
+        interactiveEnv = ConditionalEnv(args.seed, args.vis_dp_dynamics, args.savepath, alignment_strategy, policy_tag=policy_tag)
     interactiveEnv.run()
